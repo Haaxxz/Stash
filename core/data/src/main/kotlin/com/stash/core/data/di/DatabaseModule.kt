@@ -131,4 +131,8 @@ object DatabaseModule {
     @Provides
     fun provideSpotifyResolutionDao(db: StashDatabase): com.stash.core.data.db.dao.SpotifyResolutionDao =
         db.spotifyResolutionDao()
+
+    @Provides
+    fun provideFlacUpgradeQueueDao(db: StashDatabase): com.stash.core.data.db.dao.FlacUpgradeQueueDao =
+        db.flacUpgradeQueueDao()
 }
