@@ -52,6 +52,13 @@ class SyncNotificationManager @Inject constructor(
         /** Notification ID for the captcha-expired nudge. */
         const val NOTIFICATION_ID_LOSSLESS_CAPTCHA = 9004
 
+        /** Foreground-progress ID for the batch FLAC-upgrade worker. */
+        const val NOTIFICATION_ID_FLAC_UPGRADE = 9005
+
+        /** Summary ID for a finished FLAC batch — separate from the sync
+         *  summary so one never clobbers the other. */
+        const val NOTIFICATION_ID_FLAC_SUMMARY = 9006
+
         /** Maximum value for the determinate progress bar. */
         private const val PROGRESS_MAX = 100
     }
@@ -219,5 +226,22 @@ class SyncNotificationManager @Inject constructor(
      */
     fun cancelProgress() {
         notificationManager.cancel(NOTIFICATION_ID_PROGRESS)
+    }
+
+    /** Summary for a finished batch FLAC upgrade (spec 2026-07-22 §3). */
+    fun showFlacUpgradeSummary(upgraded: Int, noMatch: Int, failed: Int) {
+        val text = buildList {
+            add("$upgraded upgraded")
+            if (noMatch > 0) add("$noMatch no FLAC found")
+            if (failed > 0) add("$failed failed")
+        }.joinToString(" · ")
+        val notification = NotificationCompat.Builder(context, CHANNEL_SYNC_SUMMARY)
+            .setContentTitle("FLAC upgrade complete")
+            .setContentText(text)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(text))
+            .setSmallIcon(android.R.drawable.stat_sys_download_done)
+            .setAutoCancel(true)
+            .build()
+        notificationManager.notify(NOTIFICATION_ID_FLAC_SUMMARY, notification)
     }
 }
