@@ -110,11 +110,11 @@ import com.stash.core.ui.theme.StashTheme
  * Library screen entry point. Injects the [LibraryViewModel] via Hilt
  * and delegates rendering to the stateless [LibraryContent] composable.
  *
- * Multi-select (Task 11) applies ONLY to the Tracks tab. The [selection]
+ * Multi-select applies to the Tracks and Liked tabs. The [selection]
  * state is hoisted here so the contextual chrome ([SelectionScaffoldOverlay])
  * and the batch Save/Delete surfaces can sit in this screen's root Box. The
  * selection is cleared whenever the active tab changes so it can never strand
- * across tabs (or hide the nav bar while a non-Tracks tab is showing).
+ * across tabs (or hide the nav bar while a non-selectable tab is showing).
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -133,9 +133,9 @@ fun LibraryScreen(
     val likedFilter by viewModel.likedFilter.collectAsStateWithLifecycle()
     val likedSources by viewModel.likedSources.collectAsStateWithLifecycle()
 
-    // Multi-select state — Tracks tab only. `isActive` signals out so the host
-    // can hide the mini-player (Task 7), and the selection is force-cleared on
-    // every tab change so it can't leak onto Playlists/Artists/Albums.
+    // Multi-select state — Tracks and Liked tabs. `isActive` signals out so the
+    // host can hide the mini-player (Task 7), and the selection is force-cleared
+    // on every tab change so it can't leak onto Playlists/Artists/Albums.
     val selection = com.stash.core.ui.selection.rememberSelectionState()
     androidx.compose.runtime.LaunchedEffect(selection.isActive) { onSelectionModeChanged(selection.isActive) }
     androidx.compose.runtime.LaunchedEffect(state.activeTab) { selection.clear() }
@@ -193,8 +193,8 @@ fun LibraryScreen(
             onPlayLikedTrack = viewModel::playLiked,
         )
 
-        // ── Selection chrome — only meaningful on the Tracks tab. Selection
-        // can only be entered from a TrackListItem (Tracks tab), and we clear
+        // ── Selection chrome — meaningful on the Tracks and Liked tabs. Selection
+        // can only be entered from a TrackListItem (those tabs' rows), and we clear
         // on tab change, so guarding the overlay on activeTab is belt-and-braces.
         val activeSelectableTracks =
             if (state.activeTab == LibraryTab.LIKED) likedTracks else state.tracks
