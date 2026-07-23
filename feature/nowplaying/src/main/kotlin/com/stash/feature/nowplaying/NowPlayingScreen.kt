@@ -128,6 +128,18 @@ fun NowPlayingScreen(
     val isDownloadingCurrent by viewModel.isDownloadingCurrent.collectAsStateWithLifecycle()
     val exportingLyricsTrackId by viewModel.exportingLyricsTrackId.collectAsStateWithLifecycle()
     val radioLabel by viewModel.radioSeedLabel.collectAsStateWithLifecycle()
+    val radioTuning by viewModel.radioTuning.collectAsStateWithLifecycle()
+    // One-shot lock pulse: fires on the tuning→active transition. Also pulses
+    // when the screen re-opens with a station already live — reads as "station
+    // is active", not a bug. Keys on real state changes, not recomposition.
+    var radioLock by remember { mutableStateOf(false) }
+    LaunchedEffect(radioTuning, radioLabel) {
+        if (!radioTuning && radioLabel != null) {
+            radioLock = true
+            kotlinx.coroutines.delay(com.stash.feature.nowplaying.ui.LOCK_HOLD_MS)
+            radioLock = false
+        }
+    }
     val ambientAnimationEnabled = viewModel.ambientAnimationEnabled.collectAsStateWithLifecycle().value ?: return
     var showQueue by remember { mutableStateOf(false) }
     var showSaveSheet by remember { mutableStateOf(false) }
@@ -358,6 +370,8 @@ fun NowPlayingScreen(
                     // the active one. Lives in the TopBar icon row (no vertical
                     // footprint); accented while a station is running.
                     radioActive = radioLabel != null,
+                    radioTuning = radioTuning,
+                    radioLock = radioLock,
                     onStartRadio = viewModel::startRadioFromCurrent,
                     onStopRadio = viewModel::stopRadio,
                     accentColor = npAccent(uiState.vibrantColor),
@@ -584,6 +598,8 @@ private fun TopBar(
     isDownloaded: Boolean,
     isDownloading: Boolean,
     radioActive: Boolean,
+    radioTuning: Boolean,
+    radioLock: Boolean,
     onStartRadio: () -> Unit,
     onStopRadio: () -> Unit,
     accentColor: Color,
@@ -606,15 +622,36 @@ private fun TopBar(
         Spacer(modifier = Modifier.weight(1f))
 
         // Radio toggle — start a station from the current song, or stop the
-        // running one. Accent tint signals an active station.
+        // running one. Accent tint signals an active station; the radar sweep
+        // spins around the icon while the station is being built.
         if (hasTrack) {
-            IconButton(onClick = { if (radioActive) onStopRadio() else onStartRadio() }) {
-                Icon(
-                    imageVector = Icons.Default.Radio,
-                    contentDescription = if (radioActive) "Stop radio" else "Start radio",
-                    tint = if (radioActive) accentColor else npInk(),
-                    modifier = Modifier.size(24.dp),
+            Box(contentAlignment = Alignment.Center) {
+                com.stash.feature.nowplaying.ui.RadarSweep(
+                    tuning = radioTuning,
+                    lock = radioLock,
+                    color = accentColor,
+                    modifier = Modifier.matchParentSize(),
                 )
+                IconButton(
+                    onClick = {
+                        when {
+                            radioTuning -> Unit // ignore taps while tuning
+                            radioActive -> onStopRadio()
+                            else -> onStartRadio()
+                        }
+                    },
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Radio,
+                        contentDescription = when {
+                            radioTuning -> "Tuning radio"
+                            radioActive -> "Stop radio"
+                            else -> "Start radio"
+                        },
+                        tint = if (radioActive || radioTuning) accentColor else npInk(),
+                        modifier = Modifier.size(24.dp),
+                    )
+                }
             }
         }
 
