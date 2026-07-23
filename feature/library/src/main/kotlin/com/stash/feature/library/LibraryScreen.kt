@@ -268,7 +268,11 @@ fun LibraryScreen(
     // Mirrors the single-track Library delete dialog (same "also block" toggle
     // and "Delete & Block" wording), pluralised across the current selection.
     if (showBatchDelete) {
-        val batchTracks = state.tracks.filter { it.id in selection.selectedIds }
+        // Source from the active tab's list — state.tracks is downloaded-only,
+        // so a Liked-tab selection holding undownloaded likes would under-count
+        // and silently skip those rows if sourced from it.
+        val batchTracks = (if (state.activeTab == LibraryTab.LIKED) likedTracks else state.tracks)
+            .filter { it.id in selection.selectedIds }
         val n = batchTracks.size
         var alsoBlacklist by remember(showBatchDelete) { mutableStateOf(false) }
         AlertDialog(
