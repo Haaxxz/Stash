@@ -52,7 +52,6 @@ import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.PlaylistAdd
 import androidx.compose.material.icons.filled.PlaylistAddCheck
-import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.PlaylistPlay
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Shuffle
@@ -180,6 +179,13 @@ fun LibraryScreen(
             onCancelImport = viewModel::cancelLocalImport,
             onDismissImport = viewModel::dismissLocalImport,
             selection = selection,
+            // Single-track sheet actions reuse the batch VM methods with
+            // one-element lists — no separate single-track VM surface.
+            userPlaylists = userPlaylists.map { com.stash.core.ui.components.PlaylistInfo(it.id, it.name, it.trackCount) },
+            onSaveToPlaylist = { trackId, playlistId -> viewModel.saveSelectedToPlaylist(listOf(trackId), playlistId) },
+            onCreatePlaylistWithTrack = { name, trackId -> viewModel.createPlaylistAndAddTracks(name, listOf(trackId)) },
+            onDownloadTrack = { viewModel.downloadSelected(listOf(it)) },
+            onRemoveDownloadTrack = { viewModel.removeDownloadsForSelected(listOf(it)) },
             likedTracks = likedTracks,
             likedFilter = likedFilter,
             likedSources = likedSources,
@@ -348,6 +354,11 @@ private fun LibraryContent(
     onCancelImport: () -> Unit,
     onDismissImport: () -> Unit,
     selection: SelectionState,
+    userPlaylists: List<com.stash.core.ui.components.PlaylistInfo>,
+    onSaveToPlaylist: (trackId: Long, playlistId: Long) -> Unit,
+    onCreatePlaylistWithTrack: (name: String, trackId: Long) -> Unit,
+    onDownloadTrack: (Long) -> Unit,
+    onRemoveDownloadTrack: (Long) -> Unit,
     likedTracks: List<Track>,
     likedFilter: LikedFilter,
     likedSources: Set<LikedFilter>,
@@ -521,6 +532,11 @@ private fun LibraryContent(
                         onDeleteTrack = onDeleteTrack,
                         anyServiceConnected = anyServiceConnected,
                         selection = selection,
+                        userPlaylists = userPlaylists,
+                        onSaveToPlaylist = onSaveToPlaylist,
+                        onCreatePlaylistWithTrack = onCreatePlaylistWithTrack,
+                        onDownloadTrack = onDownloadTrack,
+                        onRemoveDownloadTrack = onRemoveDownloadTrack,
                         header = libraryHeader,
                     )
                     LibraryTab.LIKED -> LikedTab(
@@ -1101,6 +1117,11 @@ private fun TracksTab(
     onDeleteTrack: (Track, Boolean) -> Unit,
     anyServiceConnected: Boolean,
     selection: SelectionState,
+    userPlaylists: List<com.stash.core.ui.components.PlaylistInfo>,
+    onSaveToPlaylist: (trackId: Long, playlistId: Long) -> Unit,
+    onCreatePlaylistWithTrack: (name: String, trackId: Long) -> Unit,
+    onDownloadTrack: (Long) -> Unit,
+    onRemoveDownloadTrack: (Long) -> Unit,
     header: @Composable () -> Unit = {},
 ) {
     if (tracks.isEmpty()) {
@@ -1128,6 +1149,8 @@ private fun TracksTab(
             onDismiss = { trackToShare = null },
         )
     }
+    // Track whose Save-to-Playlist sheet is open (single-track path).
+    var trackToSave by remember { mutableStateOf<Track?>(null) }
     // Track pending delete confirmation.
     var trackToDelete by remember { mutableStateOf<Track?>(null) }
 
@@ -1159,7 +1182,7 @@ private fun TracksTab(
         VerticalScrollbar(state = listState)
     }
 
-    // ── Context-menu bottom sheet ───────────────────────────────────────
+    // ── Context-menu bottom sheet (shared component) ────────────────────
     selectedTrack?.let { track ->
         val sheetState = rememberModalBottomSheetState()
         ModalBottomSheet(
@@ -1167,81 +1190,33 @@ private fun TracksTab(
             sheetState = sheetState,
             containerColor = MaterialTheme.colorScheme.surface,
         ) {
-            // Header: track title + artist
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 20.dp)
-                    .padding(bottom = 8.dp),
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                ) {
-                    Text(
-                        text = track.title,
-                        style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f, fill = false),
-                    )
-                    com.stash.core.ui.components.FlacBadge(
-                        fileFormat = track.fileFormat,
-                        bitsPerSample = track.bitsPerSample,
-                        sampleRateHz = track.sampleRateHz,
-                        size = 16.dp,
-                    )
-                }
-                Text(
-                    text = track.artist,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-
-            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-
-            // Action rows
-            BottomSheetActionRow(
-                icon = Icons.Default.PlaylistPlay,
-                label = "Play Next",
-                onClick = {
-                    onPlayNext(track)
-                    selectedTrack = null
-                },
+            com.stash.core.ui.components.TrackOptionsSheet(
+                track = track,
+                onPlayNext = { onPlayNext(it); selectedTrack = null },
+                onAddToQueue = { onAddToQueue(it); selectedTrack = null },
+                onSaveToPlaylist = { trackToSave = it; selectedTrack = null },
+                onShare = { trackToShare = it; selectedTrack = null },
+                onDownload = { onDownloadTrack(it.id); selectedTrack = null },
+                onRemoveDownload = { onRemoveDownloadTrack(it.id); selectedTrack = null },
+                onDelete = { trackToDelete = it; selectedTrack = null },
             )
-            BottomSheetActionRow(
-                icon = Icons.Default.PlaylistAdd,
-                label = "Add to Queue",
-                onClick = {
-                    onAddToQueue(track)
-                    selectedTrack = null
-                },
-            )
-            BottomSheetActionRow(
-                icon = Icons.Default.Share,
-                label = "Share",
-                onClick = {
-                    trackToShare = track
-                    selectedTrack = null
-                },
-            )
-            BottomSheetActionRow(
-                icon = Icons.Default.Delete,
-                label = "Delete",
-                tint = MaterialTheme.colorScheme.error,
-                onClick = {
-                    trackToDelete = track
-                    selectedTrack = null
-                },
-            )
-
-            // Bottom padding for gesture navigation inset
-            Spacer(modifier = Modifier.height(24.dp))
         }
+    }
+
+    // ── Save to Playlist sheet (single-track) ───────────────────────────
+    trackToSave?.let { track ->
+        com.stash.core.ui.components.SaveToPlaylistSheet(
+            playlists = userPlaylists,
+            onSaveToPlaylist = { playlistId ->
+                onSaveToPlaylist(track.id, playlistId)
+                trackToSave = null
+            },
+            onCreatePlaylist = { name ->
+                onCreatePlaylistWithTrack(name, track.id)
+                trackToSave = null
+            },
+            onDismiss = { trackToSave = null },
+        )
     }
 
     // ── Delete confirmation dialog ──────────────────────────────────────
