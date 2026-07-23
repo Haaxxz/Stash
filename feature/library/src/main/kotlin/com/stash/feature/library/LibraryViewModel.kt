@@ -6,6 +6,7 @@ import com.stash.core.auth.TokenManager
 import com.stash.core.auth.model.AuthState
 import com.stash.core.data.prefs.StreamingPreference
 import com.stash.core.data.repository.MusicRepository
+import com.stash.core.data.sync.FlacUpgradeEnqueuer
 import com.stash.core.media.PlayerRepository
 import com.stash.core.model.MusicSource
 import com.stash.core.model.PlaylistType
@@ -66,6 +67,7 @@ class LibraryViewModel @Inject constructor(
     private val playlistImageHelper: PlaylistImageHelper,
     private val localImportCoordinator: LocalImportCoordinator,
     private val streamingPreference: StreamingPreference,
+    private val flacUpgradeEnqueuer: FlacUpgradeEnqueuer,
 ) : ViewModel() {
 
     /** Live progress for "Import from device". Observed by LibraryScreen. */
@@ -498,6 +500,22 @@ class LibraryViewModel @Inject constructor(
             if (deleted > 0) {
                 _userMessages.tryEmit("Deleted $deleted ${songs(deleted)}.")
             }
+        }
+    }
+
+    /** Kick off the batch FLAC upgrade for the confirmed selection (spec §3). */
+    fun upgradeSelectedToFlac(trackIds: List<Long>) {
+        viewModelScope.launch {
+            runCatching { flacUpgradeEnqueuer.startBatch(trackIds) }
+                .onSuccess {
+                    _userMessages.tryEmit(
+                        "Upgrading ${trackIds.size} ${songs(trackIds.size)} to FLAC — watch the notification.",
+                    )
+                }
+                .onFailure { e ->
+                    if (e is CancellationException) throw e
+                    _userMessages.tryEmit("Couldn't start the FLAC upgrade.")
+                }
         }
     }
 

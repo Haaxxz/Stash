@@ -45,6 +45,7 @@ import androidx.compose.material.icons.filled.DownloadDone
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Image
+import androidx.compose.material.icons.filled.HighQuality
 import androidx.compose.material.icons.filled.ImageNotSupported
 import androidx.compose.material.icons.filled.RemoveCircleOutline
 import androidx.compose.material.icons.filled.MusicNote
@@ -141,9 +142,10 @@ fun LibraryScreen(
     androidx.compose.runtime.LaunchedEffect(state.activeTab) { selection.clear() }
     androidx.activity.compose.BackHandler(enabled = selection.isActive) { selection.clear() }
 
-    // Batch-flow flags for the Save / Delete surfaces.
+    // Batch-flow flags for the Save / Delete / FLAC-upgrade surfaces.
     var showBatchSave by remember { mutableStateOf(false) }
     var showBatchDelete by remember { mutableStateOf(false) }
+    var showFlacConfirm by remember { mutableStateOf(false) }
 
     // Snackbar for the batch roll-up summaries.
     val snackbarHostState = remember { androidx.compose.material3.SnackbarHostState() }
@@ -223,6 +225,10 @@ fun LibraryScreen(
             },
             SelectionAction("play_next", "Play next", Icons.Default.PlaylistPlay) {
                 viewModel.playSelectedNext(selectedTracks); selection.clear()
+            },
+            // Lands in the selection bar's More overflow (6 > 4) — by design.
+            SelectionAction("upgrade_flac", "Upgrade to FLAC", Icons.Default.HighQuality) {
+                showFlacConfirm = true
             },
         )
 
@@ -324,6 +330,63 @@ fun LibraryScreen(
             },
             dismissButton = {
                 TextButton(onClick = { showBatchDelete = false }) { Text("Cancel") }
+            },
+        )
+    }
+
+    // ── Upgrade-to-FLAC confirmation dialog (spec §3) ─────────────────────
+    // Pre-flight honesty: eligible count, duration-based size estimate, and
+    // a free-space heads-up. Warning only — never hard-blocks the confirm.
+    if (showFlacConfirm) {
+        val batchTracks = (if (state.activeTab == LibraryTab.LIKED) likedTracks else state.tracks)
+            .filter { it.id in selection.selectedIds }
+        val eligible = eligibleForFlacUpgrade(batchTracks)
+        val skipped = batchTracks.size - eligible.size
+        val bytes = estimateFlacBytes(eligible)
+        val context = androidx.compose.ui.platform.LocalContext.current
+        val freeBytes = remember {
+            runCatching {
+                android.os.StatFs(context.filesDir.path).availableBytes
+            }.getOrDefault(Long.MAX_VALUE)
+        }
+        AlertDialog(
+            onDismissRequest = { showFlacConfirm = false },
+            title = { Text("Upgrade to FLAC?") },
+            text = {
+                Column {
+                    Text(
+                        "Upgrade ${eligible.size} ${if (eligible.size == 1) "track" else "tracks"} to FLAC? " +
+                            "Roughly ~${formatGb(bytes)} of downloads. Originals are replaced." +
+                            if (skipped > 0) {
+                                "\n\n$skipped already-FLAC or not-downloaded " +
+                                    "${if (skipped == 1) "track" else "tracks"} will be skipped."
+                            } else {
+                                ""
+                            },
+                    )
+                    if (bytes > freeBytes * 8 / 10) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            "Heads up: that's close to (or beyond) your free space " +
+                                "(${formatGb(freeBytes)} available).",
+                            color = MaterialTheme.colorScheme.error,
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = eligible.isNotEmpty(),
+                    onClick = {
+                        viewModel.upgradeSelectedToFlac(eligible.map { it.id })
+                        showFlacConfirm = false
+                        selection.clear()
+                    },
+                ) { Text("Upgrade") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showFlacConfirm = false }) { Text("Cancel") }
             },
         )
     }
