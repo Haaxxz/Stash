@@ -9,6 +9,7 @@ import com.stash.core.data.db.converter.Converters
 import com.stash.core.data.db.dao.ArtistProfileCacheDao
 import com.stash.core.data.db.dao.DiscoveryQueueDao
 import com.stash.core.data.db.dao.DownloadQueueDao
+import com.stash.core.data.db.dao.FlacUpgradeQueueDao
 import com.stash.core.data.db.dao.LastFmCacheDao
 import com.stash.core.data.db.dao.ListeningEventDao
 import com.stash.core.data.db.dao.LyricsDao
@@ -25,6 +26,7 @@ import com.stash.core.data.db.dao.TrackTagDao
 import com.stash.core.data.db.entity.ArtistProfileCacheEntity
 import com.stash.core.data.db.entity.DiscoveryQueueEntity
 import com.stash.core.data.db.entity.DownloadQueueEntity
+import com.stash.core.data.db.entity.FlacUpgradeQueueEntity
 import com.stash.core.data.db.entity.LastFmCacheEntity
 import com.stash.core.data.db.entity.ListeningEventEntity
 import com.stash.core.data.db.entity.LyricsEntity
@@ -78,8 +80,9 @@ import com.stash.core.data.db.entity.TrackTagEntity
         LyricsEntity::class,
         LastFmCacheEntity::class,
         SpotifyResolutionEntity::class,
+        FlacUpgradeQueueEntity::class,
     ],
-    version = 34,
+    version = 35,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)
@@ -116,6 +119,8 @@ abstract class StashDatabase : RoomDatabase() {
     abstract fun lastFmCacheDao(): LastFmCacheDao
 
     abstract fun spotifyResolutionDao(): SpotifyResolutionDao
+
+    abstract fun flacUpgradeQueueDao(): FlacUpgradeQueueDao
 
 
     companion object {
@@ -876,6 +881,29 @@ abstract class StashDatabase : RoomDatabase() {
         val MIGRATION_33_34 = object : Migration(33, 34) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE playlists ADD COLUMN hide_from_home INTEGER NOT NULL DEFAULT 0")
+            }
+        }
+
+        /**
+         * v34 → v35: add the flac_upgrade_queue worklist table for the batch
+         * "Upgrade to FLAC" worker (spec 2026-07-22 §3). Purely additive.
+         */
+        val MIGRATION_34_35 = object : Migration(34, 35) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `flac_upgrade_queue` (
+                        `track_id` INTEGER NOT NULL,
+                        `status` TEXT NOT NULL,
+                        `enqueued_at` INTEGER NOT NULL,
+                        PRIMARY KEY(`track_id`),
+                        FOREIGN KEY(`track_id`) REFERENCES `tracks`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_flac_upgrade_queue_status` ON `flac_upgrade_queue` (`status`)"
+                )
             }
         }
     }
