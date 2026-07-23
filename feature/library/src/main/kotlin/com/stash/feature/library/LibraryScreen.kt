@@ -196,7 +196,9 @@ fun LibraryScreen(
         // ── Selection chrome — only meaningful on the Tracks tab. Selection
         // can only be entered from a TrackListItem (Tracks tab), and we clear
         // on tab change, so guarding the overlay on activeTab is belt-and-braces.
-        val selectedTracks = state.tracks.filter { it.id in selection.selectedIds }
+        val activeSelectableTracks =
+            if (state.activeTab == LibraryTab.LIKED) likedTracks else state.tracks
+        val selectedTracks = activeSelectableTracks.filter { it.id in selection.selectedIds }
         val selectedIds = selection.selectedIds.toList()
         val allDownloaded = selectedTracks.isNotEmpty() && selectedTracks.all { it.isDownloaded }
 
@@ -224,10 +226,10 @@ fun LibraryScreen(
             },
         )
 
-        if (state.activeTab == LibraryTab.TRACKS) {
+        if (state.activeTab == LibraryTab.TRACKS || state.activeTab == LibraryTab.LIKED) {
             SelectionScaffoldOverlay(
                 selection = selection,
-                allIds = state.tracks.map { it.id },
+                allIds = activeSelectableTracks.map { it.id },
                 actions = selectionActions,
             )
         }
@@ -546,6 +548,15 @@ private fun LibraryContent(
                         currentlyPlayingTrackId = state.currentlyPlayingTrackId,
                         onSelectSource = onSelectLikedSource,
                         onTrackClick = onPlayLikedTrack,
+                        onPlayNext = onPlayNext,
+                        onAddToQueue = onAddToQueue,
+                        onDeleteTrack = onDeleteTrack,
+                        selection = selection,
+                        userPlaylists = userPlaylists,
+                        onSaveToPlaylist = onSaveToPlaylist,
+                        onCreatePlaylistWithTrack = onCreatePlaylistWithTrack,
+                        onDownloadTrack = onDownloadTrack,
+                        onRemoveDownloadTrack = onRemoveDownloadTrack,
                     )
                     LibraryTab.ARTISTS -> ArtistsGrid(
                         artists = state.artists,
@@ -604,6 +615,7 @@ private fun RecentlyDownloadedRail(
 
 // ── Liked subcategory (browse + sift likes by origin) ───────────────────────
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun LikedTab(
     tracks: List<Track>,
@@ -612,6 +624,15 @@ private fun LikedTab(
     currentlyPlayingTrackId: Long?,
     onSelectSource: (LikedFilter) -> Unit,
     onTrackClick: (Track) -> Unit,
+    onPlayNext: (Track) -> Unit,
+    onAddToQueue: (Track) -> Unit,
+    onDeleteTrack: (Track, Boolean) -> Unit,
+    selection: SelectionState,
+    userPlaylists: List<com.stash.core.ui.components.PlaylistInfo>,
+    onSaveToPlaylist: (trackId: Long, playlistId: Long) -> Unit,
+    onCreatePlaylistWithTrack: (name: String, trackId: Long) -> Unit,
+    onDownloadTrack: (Long) -> Unit,
+    onRemoveDownloadTrack: (Long) -> Unit,
 ) {
     // Sift chips: "All" plus only the origins that actually have likes.
     val sift = buildList {
@@ -620,9 +641,32 @@ private fun LikedTab(
         if (LikedFilter.SPOTIFY in sources) add("Spotify" to LikedFilter.SPOTIFY)
         if (LikedFilter.YOUTUBE in sources) add("YouTube" to LikedFilter.YOUTUBE)
     }
+
+    // Track selected for the context-menu bottom sheet (opened via the ⋮ now;
+    // long-press enters multi-select instead).
+    var selectedTrack by remember { mutableStateOf<Track?>(null) }
+    // Track whose share sheet is open (fork issue ParaliyzedEvo/Stash#40).
+    var trackToShare by remember { mutableStateOf<Track?>(null) }
+    trackToShare?.let { t ->
+        com.stash.core.ui.components.ShareTrackSheet(
+            title = t.title,
+            artist = t.artist,
+            spotifyUri = t.spotifyUri,
+            youtubeId = t.youtubeId,
+            onDismiss = { trackToShare = null },
+        )
+    }
+    // Track whose Save-to-Playlist sheet is open (single-track path).
+    var trackToSave by remember { mutableStateOf<Track?>(null) }
+    // Track pending delete confirmation.
+    var trackToDelete by remember { mutableStateOf<Track?>(null) }
+
     val listState = rememberLazyListState()
     Box(Modifier.fillMaxSize()) {
-        LazyColumn(state = listState) {
+        LazyColumn(
+            state = listState,
+            contentPadding = PaddingValues(bottom = if (selection.isActive) 140.dp else 0.dp),
+        ) {
             // Only offer the sift when there's more than one origin to pick between.
             if (sift.size > 2) {
                 item {
@@ -640,16 +684,113 @@ private fun LikedTab(
             items(tracks, key = { it.id }) { track ->
                 TrackListItem(
                     track = track,
-                    onClick = { onTrackClick(track) },
+                    onClick = {
+                        if (selection.isActive) selection.toggle(track.id)
+                        else onTrackClick(track)
+                    },
                     isPlaying = track.id == currentlyPlayingTrackId,
-                    onLongPress = {},
-                    selectionActive = false,
-                    selected = false,
-                    onMoreClick = {},
+                    onLongPress = { if (!selection.isActive) selection.enter(track.id) },
+                    selectionActive = selection.isActive,
+                    selected = selection.isSelected(track.id),
+                    onMoreClick = { selectedTrack = track },
                 )
             }
         }
         VerticalScrollbar(state = listState)
+    }
+
+    // ── Context-menu bottom sheet (shared component) ────────────────────
+    selectedTrack?.let { track ->
+        val sheetState = rememberModalBottomSheetState()
+        ModalBottomSheet(
+            onDismissRequest = { selectedTrack = null },
+            sheetState = sheetState,
+            containerColor = MaterialTheme.colorScheme.surface,
+        ) {
+            com.stash.core.ui.components.TrackOptionsSheet(
+                track = track,
+                onPlayNext = { onPlayNext(it); selectedTrack = null },
+                onAddToQueue = { onAddToQueue(it); selectedTrack = null },
+                onSaveToPlaylist = { trackToSave = it; selectedTrack = null },
+                onShare = { trackToShare = it; selectedTrack = null },
+                onDownload = { onDownloadTrack(it.id); selectedTrack = null },
+                onRemoveDownload = { onRemoveDownloadTrack(it.id); selectedTrack = null },
+                onDelete = { trackToDelete = it; selectedTrack = null },
+            )
+        }
+    }
+
+    // ── Save to Playlist sheet (single-track) ───────────────────────────
+    trackToSave?.let { track ->
+        com.stash.core.ui.components.SaveToPlaylistSheet(
+            playlists = userPlaylists,
+            onSaveToPlaylist = { playlistId ->
+                onSaveToPlaylist(track.id, playlistId)
+                trackToSave = null
+            },
+            onCreatePlaylist = { name ->
+                onCreatePlaylistWithTrack(name, track.id)
+                trackToSave = null
+            },
+            onDismiss = { trackToSave = null },
+        )
+    }
+
+    // ── Delete confirmation dialog ──────────────────────────────────────
+    trackToDelete?.let { track ->
+        var alsoBlacklist by remember(track.id) { mutableStateOf(false) }
+        AlertDialog(
+            onDismissRequest = { trackToDelete = null },
+            title = { Text("Delete \"${track.title}\"?") },
+            text = {
+                Column {
+                    Text(
+                        "\"${track.title}\" by ${track.artist} will be removed from " +
+                            "your library and deleted from disk.",
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.clickable { alsoBlacklist = !alsoBlacklist },
+                    ) {
+                        androidx.compose.material3.Checkbox(
+                            checked = alsoBlacklist,
+                            onCheckedChange = { alsoBlacklist = it },
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Also block this song from future syncs",
+                                style = MaterialTheme.typography.bodyMedium,
+                            )
+                            Text(
+                                text = "Blocked songs never re-download. Unblock them in Settings later.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        onDeleteTrack(track, alsoBlacklist)
+                        trackToDelete = null
+                    },
+                ) {
+                    Text(
+                        text = if (alsoBlacklist) "Delete & Block" else "Delete",
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { trackToDelete = null }) {
+                    Text("Cancel")
+                }
+            },
+        )
     }
 }
 
