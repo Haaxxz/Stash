@@ -163,6 +163,10 @@ class LibraryViewModel @Inject constructor(
             // (and com.stash.data.download.lossless.AudioFormat.LOSSLESS_CODECS).
             // Worth duplicating — short list, short reach across modules.
             SourceFilter.FLAC -> allTracks.filter { it.fileFormat.lowercase() in LOSSLESS_CODECS }
+            // The batch-upgrade worklist: downloaded but still lossy.
+            SourceFilter.NON_FLAC -> allTracks.filter {
+                it.isDownloaded && it.fileFormat.lowercase() !in LOSSLESS_CODECS
+            }
         }
 
         // -- Apply client-side search filter --
