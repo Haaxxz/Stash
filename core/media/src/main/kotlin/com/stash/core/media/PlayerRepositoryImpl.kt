@@ -26,6 +26,7 @@ import com.stash.core.media.streaming.StreamUrlCache
 import com.stash.core.media.streaming.YouTubeStreamResolver
 import com.stash.core.media.streaming.stashResolveUri
 import com.stash.core.model.PlayerState
+import com.stash.core.model.RadioStartResult
 import com.stash.core.model.RepeatMode
 import com.stash.core.model.Track
 import com.stash.core.media.service.StashPlaybackService.Companion.EXTRA_STREAM_BIT_DEPTH
@@ -686,11 +687,11 @@ class PlayerRepositoryImpl @Inject constructor(
     override suspend fun startRadio(
         seed: com.stash.core.data.radio.RadioSeed,
         keepCurrent: Boolean,
-    ): Boolean {
-        if (!streamingPreference.current()) return false
-        val controller = ensureController() ?: return false
+    ): RadioStartResult {
+        if (!streamingPreference.current()) return RadioStartResult.StreamingOff
+        val controller = ensureController() ?: return RadioStartResult.PlayerNotReady
         val (session, firstBatch) = radioGenerator.start(seed)
-        if (firstBatch.isEmpty()) return false
+        if (firstBatch.isEmpty()) return RadioStartResult.NoStation
         radioSession = session
         radioActive = true
         // Only ONE grower may run: startRadio bypasses setQueueInternal (which is
@@ -741,7 +742,7 @@ class PlayerRepositoryImpl @Inject constructor(
             is com.stash.core.data.radio.RadioSeed.Artist -> seed.name
             is com.stash.core.data.radio.RadioSeed.Song -> seed.title
         }
-        return true
+        return RadioStartResult.Started
     }
 
     override fun stopRadio() {

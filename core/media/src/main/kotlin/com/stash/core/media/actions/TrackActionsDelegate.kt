@@ -7,6 +7,7 @@ import com.stash.core.data.db.dao.TrackDao
 import com.stash.core.media.preview.PreviewPlayer
 import com.stash.core.media.preview.PreviewState
 import com.stash.core.media.preview.SearchPreviewMediaSource
+import com.stash.core.model.RadioStartResult
 import com.stash.core.model.TrackItem
 import com.stash.data.download.preview.PreviewUrlCache
 import com.stash.data.download.preview.PreviewUrlExtractor
@@ -398,15 +399,15 @@ class TrackActionsDelegate @Inject constructor(
         }
     }
 
-    /** Start a song radio seeded from [item]. Streaming-only: on a false return
-     *  (streaming off/offline) we surface a hint instead of a dead tap. */
+    /** Start a song radio seeded from [item]. Streaming-only: on a non-Started
+     *  result (streaming off/offline) we surface a hint instead of a dead tap. */
     fun startRadio(item: TrackItem) {
         scope().launch {
             val started = playerRepository.startRadio(
                 com.stash.core.data.radio.RadioSeed.Song(
                     title = item.title, artist = item.artist, ytVideoId = item.videoId,
                 ),
-            )
+            ) is RadioStartResult.Started
             if (!started) _userMessages.tryEmit("Radio needs Online mode — turn on streaming.")
         }
     }

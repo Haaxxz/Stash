@@ -10,6 +10,7 @@ import com.stash.core.data.lossless.LosslessUpgrader
 import com.stash.core.data.prefs.NowPlayingPreference
 import com.stash.core.data.repository.MusicRepository
 import com.stash.core.media.PlayerRepository
+import com.stash.core.model.RadioStartResult
 import com.stash.core.model.UpgradeResult
 import com.stash.core.model.isFlac
 import com.stash.core.ui.components.PlaylistInfo
@@ -209,7 +210,7 @@ class NowPlayingViewModel @Inject constructor(
                 ),
                 // The seed IS the currently-playing track — keep it playing, don't restart.
                 keepCurrent = true,
-            )
+            ) is RadioStartResult.Started
             if (!started) _userMessages.tryEmit("Radio needs Online mode — turn on streaming.")
         }
     }
