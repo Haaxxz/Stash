@@ -273,38 +273,59 @@ fun SongRow(
         }
         }
 
-        // Overflow: Play next / Add to queue / Add to playlist
-        Box {
-            var menuOpen by remember { mutableStateOf(false) }
-            IconButton(onClick = { menuOpen = true }, modifier = Modifier.size(40.dp)) {
-                Icon(
-                    imageVector = Icons.Default.MoreVert,
-                    contentDescription = "More actions",
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-            DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
-                DropdownMenuItem(
-                    text = { Text("Play next") },
-                    leadingIcon = { Icon(Icons.Default.PlaylistPlay, contentDescription = null) },
-                    onClick = { menuOpen = false; onPlayNext() },
-                )
-                DropdownMenuItem(
-                    text = { Text("Add to queue") },
-                    leadingIcon = { Icon(Icons.Default.PlaylistAdd, contentDescription = null) },
-                    onClick = { menuOpen = false; onAddToQueue() },
-                )
-                DropdownMenuItem(
-                    text = { Text("Add to playlist") },
-                    leadingIcon = { Icon(Icons.Default.PlaylistAddCheck, contentDescription = null) },
-                    onClick = { menuOpen = false; onAddToPlaylist() },
-                )
-                DropdownMenuItem(
-                    text = { Text("Start radio") },
-                    leadingIcon = { Icon(Icons.Default.Radio, contentDescription = null) },
-                    onClick = { menuOpen = false; onStartRadio() },
-                )
-            }
+        // Overflow menu — shared with the Top-result card so both stay in sync.
+        SearchTrackMenu(
+            onPlayNext = onPlayNext,
+            onAddToQueue = onAddToQueue,
+            onAddToPlaylist = onAddToPlaylist,
+            onStartRadio = onStartRadio,
+        )
+    }
+}
+
+/**
+ * The per-track ⋮ overflow menu shared by [SongRow] and the Top-result card, so
+ * every search track surface offers the same actions (the promise was broken
+ * when the Top-result card had no menu at all).
+ */
+@Composable
+fun SearchTrackMenu(
+    onPlayNext: () -> Unit,
+    onAddToQueue: () -> Unit,
+    onAddToPlaylist: () -> Unit,
+    onStartRadio: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Box(modifier) {
+        var menuOpen by remember { mutableStateOf(false) }
+        IconButton(onClick = { menuOpen = true }, modifier = Modifier.size(40.dp)) {
+            Icon(
+                imageVector = Icons.Default.MoreVert,
+                contentDescription = "More actions",
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+            DropdownMenuItem(
+                text = { Text("Play next") },
+                leadingIcon = { Icon(Icons.Default.PlaylistPlay, contentDescription = null) },
+                onClick = { menuOpen = false; onPlayNext() },
+            )
+            DropdownMenuItem(
+                text = { Text("Add to queue") },
+                leadingIcon = { Icon(Icons.Default.PlaylistAdd, contentDescription = null) },
+                onClick = { menuOpen = false; onAddToQueue() },
+            )
+            DropdownMenuItem(
+                text = { Text("Add to playlist") },
+                leadingIcon = { Icon(Icons.Default.PlaylistAddCheck, contentDescription = null) },
+                onClick = { menuOpen = false; onAddToPlaylist() },
+            )
+            DropdownMenuItem(
+                text = { Text("Start radio") },
+                leadingIcon = { Icon(Icons.Default.Radio, contentDescription = null) },
+                onClick = { menuOpen = false; onStartRadio() },
+            )
         }
     }
 }

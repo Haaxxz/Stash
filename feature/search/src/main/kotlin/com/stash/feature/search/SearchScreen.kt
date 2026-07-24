@@ -487,6 +487,10 @@ private fun SectionedResultsList(
                             onPreview = { onPreview(top.track.toTrackItem()) },
                             onStopPreview = onStopPreview,
                             onDownload = { onDownload(top.track) },
+                            onPlayNext = { onPlayNext(top.track.toTrackItem()) },
+                            onAddToQueue = { onAddToQueue(top.track.toTrackItem()) },
+                            onAddToPlaylist = { onRequestAddToPlaylist(top.track.toTrackItem()) },
+                            onStartRadio = { onStartRadio(top.track.toTrackItem()) },
                         )
                     } else {
                         TopResultCard(
@@ -594,6 +598,10 @@ private fun TopResultCard(
     onPreview: () -> Unit = {},
     onStopPreview: () -> Unit = {},
     onDownload: () -> Unit = {},
+    onPlayNext: () -> Unit = {},
+    onAddToQueue: () -> Unit = {},
+    onAddToPlaylist: () -> Unit = {},
+    onStartRadio: () -> Unit = {},
 ) {
     val extendedColors = StashTheme.extendedColors
     val clickMod = when (item) {
@@ -740,6 +748,15 @@ private fun TopResultCard(
                     }
                 }
             }
+
+            // Same ⋮ menu the ordinary song rows have — the Top-result card is
+            // the highest-visibility card and used to be the one with none.
+            SearchTrackMenu(
+                onPlayNext = onPlayNext,
+                onAddToQueue = onAddToQueue,
+                onAddToPlaylist = onAddToPlaylist,
+                onStartRadio = onStartRadio,
+            )
         }
     }
 }
