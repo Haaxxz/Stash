@@ -66,6 +66,7 @@ class DiagnosticsBundleBuilder @Inject constructor(
             section("Downloads") { downloadsSection() },
             section("Counts") { countsSection() },
             section("Recent crash reports") { crashReportsSection() },
+            section("Process exit reasons") { exitReasonsSection() },
             section("Recent logs") { "== Recent logs ==\n" + logcatCapture.recentLogs(1500) },
         )
         val assembled = sections.joinToString("\n\n")
@@ -74,6 +75,54 @@ class DiagnosticsBundleBuilder @Inject constructor(
 
     private inline fun section(name: String, block: () -> String): String =
         runCatching { block() }.getOrElse { "[$name unavailable: ${it.message}]" }
+
+    // ── Section: Process exit reasons ───────────────────────────────────────
+    //
+    // Java-uncaught crashes land in CrashFileStore, but ANRs, native crashes,
+    // and low-memory (LMK/OOM) kills leave NO crash file — the only record is
+    // the OS exit-reason ring buffer. Surfacing it is what lets us triage the
+    // OOM reports (#238/#239) that show "Recent crash reports: none". API 30+.
+
+    private fun exitReasonsSection(): String {
+        if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.R) {
+            return "== Process exit reasons ==\nunavailable (needs Android 11+)"
+        }
+        val am = context.getSystemService(android.app.ActivityManager::class.java)
+            ?: return "== Process exit reasons ==\nunavailable"
+        val reasons = am.getHistoricalProcessExitReasons(context.packageName, 0, 8)
+        return buildString {
+            appendLine("== Process exit reasons ==")
+            if (reasons.isEmpty()) {
+                append("none")
+                return@buildString
+            }
+            reasons.forEach { info ->
+                // pss/rss are reported in KB. No PII — this is our own process.
+                appendLine(
+                    "- ts=${info.timestamp} | ${exitReasonName(info.reason)} | " +
+                        "importance=${info.importance} | pss=${info.pss / 1024}MB rss=${info.rss / 1024}MB" +
+                        (info.description?.takeIf { it.isNotBlank() }?.let { " | $it" } ?: ""),
+                )
+            }
+        }
+    }
+
+    private fun exitReasonName(reason: Int): String = when (reason) {
+        android.app.ApplicationExitInfo.REASON_EXIT_SELF -> "EXIT_SELF"
+        android.app.ApplicationExitInfo.REASON_SIGNALED -> "SIGNALED"
+        android.app.ApplicationExitInfo.REASON_LOW_MEMORY -> "LOW_MEMORY"
+        android.app.ApplicationExitInfo.REASON_CRASH -> "CRASH(java)"
+        android.app.ApplicationExitInfo.REASON_CRASH_NATIVE -> "CRASH_NATIVE"
+        android.app.ApplicationExitInfo.REASON_ANR -> "ANR"
+        android.app.ApplicationExitInfo.REASON_INITIALIZATION_FAILURE -> "INIT_FAILURE"
+        android.app.ApplicationExitInfo.REASON_PERMISSION_CHANGE -> "PERMISSION_CHANGE"
+        android.app.ApplicationExitInfo.REASON_EXCESSIVE_RESOURCE_USAGE -> "EXCESSIVE_RESOURCE"
+        android.app.ApplicationExitInfo.REASON_USER_REQUESTED -> "USER_REQUESTED"
+        android.app.ApplicationExitInfo.REASON_USER_STOPPED -> "USER_STOPPED"
+        android.app.ApplicationExitInfo.REASON_DEPENDENCY_DIED -> "DEPENDENCY_DIED"
+        android.app.ApplicationExitInfo.REASON_OTHER -> "OTHER"
+        else -> "reason=$reason"
+    }
 
     // ── Section 2: Connection ───────────────────────────────────────────────
 
