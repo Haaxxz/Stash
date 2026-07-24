@@ -270,6 +270,14 @@ fun ArtistDetailScreen(
                     selectedTrack = null
                 },
                 onShare = { trackToShare = it; selectedTrack = null },
+                onDownload = {
+                    viewModel.queueDownload(it.id)
+                    selectedTrack = null
+                },
+                onRemoveDownload = {
+                    viewModel.removeDownload(it.id)
+                    selectedTrack = null
+                },
             )
         }
     }

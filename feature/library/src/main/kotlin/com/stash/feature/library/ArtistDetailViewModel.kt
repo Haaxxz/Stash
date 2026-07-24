@@ -263,6 +263,22 @@ class ArtistDetailViewModel @Inject constructor(
         }
     }
 
+    /** Queue a single track for download (artist-detail ⋮ menu). */
+    fun queueDownload(trackId: Long) {
+        viewModelScope.launch {
+            musicRepository.queueDownload(trackId)
+            _userMessages.tryEmit("Queued for download.")
+        }
+    }
+
+    /** Remove a single track's on-disk file, keeping the streamable row. */
+    fun removeDownload(trackId: Long) {
+        viewModelScope.launch {
+            musicRepository.removeDownload(trackId)
+            _userMessages.tryEmit("Download removed.")
+        }
+    }
+
     /** Add each of [trackIds] to the playlist identified by [playlistId]. */
     fun saveSelectedToPlaylist(trackIds: List<Long>, playlistId: Long) {
         viewModelScope.launch {
