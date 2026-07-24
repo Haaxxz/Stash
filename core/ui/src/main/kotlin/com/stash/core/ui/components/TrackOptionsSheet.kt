@@ -21,6 +21,7 @@ import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.PlaylistAdd
 import androidx.compose.material.icons.filled.PlaylistPlay
+import androidx.compose.material.icons.filled.Radio
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -43,28 +44,33 @@ import com.stash.core.ui.theme.StashTheme
 /**
  * Bottom sheet content showing queue actions for a selected track.
  *
+ * Every action row except Play Next and Save to Playlist is optional: pass null
+ * to hide it, so each surface shows only what makes sense there (e.g. the play
+ * queue omits Add to Queue and Delete — a track is already queued, and swipe
+ * removes it — while library rows keep both).
+ *
  * @param track               The track the user long-pressed.
  * @param onPlayNext          Inserts the track after the currently-playing track.
- * @param onAddToQueue        Appends the track to the end of the queue.
  * @param onSaveToPlaylist    Opens the save-to-playlist flow.
- * @param onDelete            Deletes the track from the device.
- * @param onShare             Opens the share-links sheet. Pass null to hide the row.
- * @param onDownload          Queue this streaming-only track for download. Pass
- *                            null to hide the option (e.g. on screens where the
- *                            download flow doesn't make sense).
+ * @param onAddToQueue        Appends the track to the end of the queue. Null hides.
+ * @param onStartRadio        Starts a song radio seeded from this track. Null hides.
+ * @param onShare             Opens the share-links sheet. Null hides.
+ * @param onDownload          Queue this streaming-only track for download. Null hides.
  * @param onRemoveDownload    Remove the on-disk file but keep the row (track
- *                            stays streamable). Pass null to hide.
+ *                            stays streamable). Null hides.
+ * @param onDelete            Deletes the track from the device. Null hides.
  */
 @Composable
 fun TrackOptionsSheet(
     track: Track,
     onPlayNext: (Track) -> Unit,
-    onAddToQueue: (Track) -> Unit,
     onSaveToPlaylist: (Track) -> Unit,
-    onDelete: (Track) -> Unit,
+    onAddToQueue: ((Track) -> Unit)? = null,
+    onStartRadio: ((Track) -> Unit)? = null,
     onShare: ((Track) -> Unit)? = null,
     onDownload: ((Track) -> Unit)? = null,
     onRemoveDownload: ((Track) -> Unit)? = null,
+    onDelete: ((Track) -> Unit)? = null,
 ) {
     val extendedColors = StashTheme.extendedColors
 
@@ -140,11 +146,22 @@ fun TrackOptionsSheet(
         )
 
         // -- Add to Queue option --
-        SheetOptionRow(
-            icon = Icons.Default.PlaylistAdd,
-            label = "Add to Queue",
-            onClick = { onAddToQueue(track) },
-        )
+        if (onAddToQueue != null) {
+            SheetOptionRow(
+                icon = Icons.Default.PlaylistAdd,
+                label = "Add to Queue",
+                onClick = { onAddToQueue(track) },
+            )
+        }
+
+        // -- Start Radio option --
+        if (onStartRadio != null) {
+            SheetOptionRow(
+                icon = Icons.Default.Radio,
+                label = "Start radio",
+                onClick = { onStartRadio(track) },
+            )
+        }
 
         // -- Save to Playlist option --
         SheetOptionRow(
@@ -181,15 +198,16 @@ fun TrackOptionsSheet(
             )
         }
 
-        Spacer(modifier = Modifier.height(4.dp))
-
         // -- Delete option --
-        SheetOptionRow(
-            icon = Icons.Default.Delete,
-            label = "Delete",
-            tint = MaterialTheme.colorScheme.error,
-            onClick = { onDelete(track) },
-        )
+        if (onDelete != null) {
+            Spacer(modifier = Modifier.height(4.dp))
+            SheetOptionRow(
+                icon = Icons.Default.Delete,
+                label = "Delete",
+                tint = MaterialTheme.colorScheme.error,
+                onClick = { onDelete(track) },
+            )
+        }
     }
 }
 
