@@ -220,19 +220,20 @@ class NowPlayingViewModel @Inject constructor(
                     // The seed IS the currently-playing track — keep it playing, don't restart.
                     keepCurrent = true,
                 )
-                when (result) {
-                    RadioStartResult.Started -> Unit // sweep locks; no toast
-                    RadioStartResult.StreamingOff ->
-                        _userMessages.tryEmit("Radio needs Online mode — turn on streaming.")
-                    RadioStartResult.PlayerNotReady ->
-                        _userMessages.tryEmit("Player is still starting — try again.")
-                    RadioStartResult.NoStation ->
-                        _userMessages.tryEmit("Couldn't find similar tracks for this song.")
-                }
+                // Started locks the sweep with no toast; each failure explains itself.
+                radioFailureMessage(result)?.let { _userMessages.tryEmit(it) }
             } finally {
                 _radioTuning.value = false
             }
         }
+    }
+
+    /** User-facing hint for a non-Started radio result; null for Started. */
+    private fun radioFailureMessage(result: RadioStartResult): String? = when (result) {
+        RadioStartResult.Started -> null
+        RadioStartResult.StreamingOff -> "Radio needs Online mode — turn on streaming."
+        RadioStartResult.PlayerNotReady -> "Player is still starting — try again."
+        RadioStartResult.NoStation -> "Couldn't find similar tracks for this song."
     }
 
     /** Stop the active radio station. */
@@ -735,6 +736,43 @@ class NowPlayingViewModel @Inject constructor(
      */
     fun toggleDownloadForCurrentTrack() {
         val track = _uiState.value.currentTrack ?: return
+        toggleDownload(track)
+    }
+
+    // ── Per-track actions for the play-queue ⋮ menu ─────────────────────────
+    // The queue sheet acts on an arbitrary upcoming track, not the current one,
+    // so these take a Track. Add-to-Queue and Delete are intentionally absent
+    // from the queue menu (already queued; swipe removes).
+
+    /** Insert [track] right after the currently-playing track. */
+    fun queuePlayNext(track: Track) {
+        viewModelScope.launch {
+            playerRepository.addNext(track)
+            _userMessages.tryEmit("Playing next")
+        }
+    }
+
+    /** Start a song radio seeded from [track] (a queue row, not the current track). */
+    fun startRadioForTrack(track: Track) {
+        viewModelScope.launch {
+            val result = playerRepository.startRadio(
+                com.stash.core.data.radio.RadioSeed.Song(
+                    title = track.title, artist = track.artist, ytVideoId = track.youtubeId,
+                ),
+            )
+            radioFailureMessage(result)?.let { _userMessages.tryEmit(it) }
+        }
+    }
+
+    /** Open the share sheet for [track], fetching its full row for the link options. */
+    fun onShareTrack(track: Track) {
+        viewModelScope.launch {
+            _shareTrack.value = musicRepository.observeTrackById(track.id).firstOrNull() ?: track
+        }
+    }
+
+    /** Download or remove-download for any [track] (current track or a queue row). */
+    fun toggleDownload(track: Track) {
         viewModelScope.launch {
             if (track.isDownloaded) {
                 musicRepository.removeDownload(track.id)

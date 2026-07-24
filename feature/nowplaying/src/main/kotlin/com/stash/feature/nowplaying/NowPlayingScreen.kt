@@ -143,6 +143,8 @@ fun NowPlayingScreen(
     val ambientAnimationEnabled = viewModel.ambientAnimationEnabled.collectAsStateWithLifecycle().value ?: return
     var showQueue by remember { mutableStateOf(false) }
     var showSaveSheet by remember { mutableStateOf(false) }
+    // The queue row (if any) whose Save-to-Playlist picker is open.
+    var queueSaveTrack by remember { mutableStateOf<com.stash.core.model.Track?>(null) }
     val shareTrack by viewModel.shareTrack.collectAsStateWithLifecycle()
     // "This song is wrong" dialog — shown when the flag icon is tapped.
     // Decouples the Flag button (which is just "there's a problem") from
@@ -200,6 +202,28 @@ fun NowPlayingScreen(
             },
             onRemoveTrack = viewModel::onRemoveFromQueue,
             onMoveTrack = viewModel::onMoveInQueue,
+            onPlayNext = viewModel::queuePlayNext,
+            onStartRadio = viewModel::startRadioForTrack,
+            onSaveToPlaylist = { queueSaveTrack = it },
+            onShare = viewModel::onShareTrack,
+            onToggleDownload = viewModel::toggleDownload,
+        )
+    }
+
+    // Save-to-playlist sheet for a queue row's ⋮ (separate from the current-
+    // track save sheet so both can target their own track).
+    queueSaveTrack?.let { t ->
+        SaveToPlaylistSheet(
+            playlists = uiState.userPlaylists,
+            onSaveToPlaylist = { playlistId ->
+                viewModel.saveTrackToPlaylist(t.id, playlistId)
+                queueSaveTrack = null
+            },
+            onCreatePlaylist = { name ->
+                viewModel.createPlaylistAndAddTrack(name, t.id)
+                queueSaveTrack = null
+            },
+            onDismiss = { queueSaveTrack = null },
         )
     }
 

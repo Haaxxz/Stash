@@ -24,6 +24,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DragHandle
 import androidx.compose.material.icons.filled.GraphicEq
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.SwipeToDismissBox
@@ -80,8 +81,20 @@ fun QueueBottomSheet(
     onTrackClick: (index: Int) -> Unit,
     onRemoveTrack: (index: Int) -> Unit,
     onMoveTrack: (from: Int, to: Int) -> Unit,
+    // Per-track ⋮ menu actions (queue-appropriate subset — no Add to Queue /
+    // Delete; swipe removes from the queue). Null = feature disabled.
+    onPlayNext: ((Track) -> Unit)? = null,
+    onStartRadio: ((Track) -> Unit)? = null,
+    onSaveToPlaylist: ((Track) -> Unit)? = null,
+    onShare: ((Track) -> Unit)? = null,
+    onToggleDownload: ((Track) -> Unit)? = null,
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+
+    // The upcoming track whose ⋮ menu is open (null = closed). Opens a nested
+    // TrackOptionsSheet over the queue sheet.
+    var menuTrack by remember { mutableStateOf<Track?>(null) }
+    val menuEnabled = onPlayNext != null
 
     // Local mutable copy of upcoming tracks for drag reordering.
     // Swaps happen here visually during drag; committed to player on drag end.
@@ -311,6 +324,22 @@ fun QueueBottomSheet(
                                     overflow = TextOverflow.Ellipsis,
                                 )
                             }
+                            // Per-track ⋮ menu (Play next / Save / Download /
+                            // Share / Start radio). Hidden while dragging so it
+                            // can't steal the gesture.
+                            if (menuEnabled && !isDragging) {
+                                IconButton(
+                                    onClick = { menuTrack = track },
+                                    modifier = Modifier.size(40.dp),
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.MoreVert,
+                                        contentDescription = "Track options",
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.size(20.dp),
+                                    )
+                                }
+                            }
                             // Drag handle
                             Box(
                                 modifier = Modifier
@@ -399,6 +428,29 @@ fun QueueBottomSheet(
             }
 
             Spacer(Modifier.height(16.dp))
+        }
+    }
+
+    // ── Per-track options, opened over the queue by a row's ⋮ ────────────────
+    // Queue-appropriate subset: Add-to-Queue and Delete are omitted (the track
+    // is already queued; swipe removes it), so those rows don't render.
+    menuTrack?.let { t ->
+        val menuSheetState = rememberModalBottomSheetState()
+        ModalBottomSheet(
+            onDismissRequest = { menuTrack = null },
+            sheetState = menuSheetState,
+            containerColor = MaterialTheme.colorScheme.surface,
+            contentColor = MaterialTheme.colorScheme.onSurface,
+        ) {
+            com.stash.core.ui.components.TrackOptionsSheet(
+                track = t,
+                onPlayNext = { onPlayNext?.invoke(it); menuTrack = null },
+                onSaveToPlaylist = { onSaveToPlaylist?.invoke(it); menuTrack = null },
+                onStartRadio = onStartRadio?.let { cb -> { track: Track -> cb(track); menuTrack = null } },
+                onShare = onShare?.let { cb -> { track: Track -> cb(track); menuTrack = null } },
+                onDownload = onToggleDownload?.let { cb -> { track: Track -> cb(track); menuTrack = null } },
+                onRemoveDownload = onToggleDownload?.let { cb -> { track: Track -> cb(track); menuTrack = null } },
+            )
         }
     }
 }
