@@ -214,7 +214,9 @@ class ArtistProfileViewModelTest {
         )
         val cache = mock<ArtistCache>()
         whenever(cache.get(eq("UC1"))).thenReturn(flowOf(CachedProfile.Fresh(profile)))
-        val player = mock<PlayerRepository> { onBlocking { startRadio(any(), any()) } doReturn true }
+        val player = mock<PlayerRepository> {
+            onBlocking { startRadio(any(), any()) } doReturn com.stash.core.model.RadioStartResult.Started
+        }
         val vm = vmWith(cache = cache, playerRepository = player)
         advanceUntilIdle()
 

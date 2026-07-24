@@ -21,6 +21,7 @@ import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.PlaylistAdd
 import androidx.compose.material.icons.filled.PlaylistPlay
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -47,6 +48,7 @@ import com.stash.core.ui.theme.StashTheme
  * @param onAddToQueue        Appends the track to the end of the queue.
  * @param onSaveToPlaylist    Opens the save-to-playlist flow.
  * @param onDelete            Deletes the track from the device.
+ * @param onShare             Opens the share-links sheet. Pass null to hide the row.
  * @param onDownload          Queue this streaming-only track for download. Pass
  *                            null to hide the option (e.g. on screens where the
  *                            download flow doesn't make sense).
@@ -60,6 +62,7 @@ fun TrackOptionsSheet(
     onAddToQueue: (Track) -> Unit,
     onSaveToPlaylist: (Track) -> Unit,
     onDelete: (Track) -> Unit,
+    onShare: ((Track) -> Unit)? = null,
     onDownload: ((Track) -> Unit)? = null,
     onRemoveDownload: ((Track) -> Unit)? = null,
 ) {
@@ -166,6 +169,15 @@ fun TrackOptionsSheet(
                 icon = Icons.Default.Download,
                 label = "Download",
                 onClick = { onDownload(track) },
+            )
+        }
+
+        // -- Share option --
+        if (onShare != null) {
+            SheetOptionRow(
+                icon = Icons.Default.Share,
+                label = "Share",
+                onClick = { onShare(track) },
             )
         }
 

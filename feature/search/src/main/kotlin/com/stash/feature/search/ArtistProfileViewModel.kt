@@ -15,6 +15,7 @@ import com.stash.core.media.actions.TrackActionsDelegate
 import com.stash.core.media.preview.LosslessUrlPrefetcher
 import com.stash.core.model.MusicSource
 import com.stash.core.model.Playlist
+import com.stash.core.model.RadioStartResult
 import com.stash.core.model.Track
 import com.stash.core.model.TrackItem
 import com.stash.data.ytmusic.model.AlbumSource
@@ -240,16 +241,16 @@ class ArtistProfileViewModel @Inject constructor(
      */
     /**
      * Start an artist radio seeded from this artist. The browseId is already in
-     * hand (nav arg), so the generator skips a resolveArtist hop. On a false
-     * return (streaming off/offline, or no seed tracks) we surface a one-shot
-     * hint instead of a dead tap.
+     * hand (nav arg), so the generator skips a resolveArtist hop. On a
+     * non-Started result (streaming off/offline, or no seed tracks) we surface
+     * a one-shot hint instead of a dead tap.
      */
     fun startRadio() {
         viewModelScope.launch {
             val name = _uiState.value.hero.name.ifBlank { initialName }
             val started = playerRepository.startRadio(
                 com.stash.core.data.radio.RadioSeed.Artist(name, ytBrowseId = artistId),
-            )
+            ) is RadioStartResult.Started
             if (!started) _userMessages.emit("Radio needs Online mode — turn on streaming.")
         }
     }

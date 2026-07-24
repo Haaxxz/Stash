@@ -167,8 +167,10 @@ interface PlayerRepository {
 
     /**
      * Start a radio station seeded from an artist or track. Builds a balanced
-     * queue and arms self-extension; replaces any current queue/station. Returns
-     * false (no-op) if streaming is off/offline or the seed yields nothing.
+     * queue and arms self-extension; replaces any current queue/station.
+     * Returns a [com.stash.core.model.RadioStartResult] naming the exact
+     * outcome; anything but [com.stash.core.model.RadioStartResult.Started]
+     * is a no-op.
      *
      * [keepCurrent] = true (the Now Playing "Start radio from this song" case):
      * the seed IS the currently-playing track, so DON'T restart it — keep the
@@ -177,7 +179,7 @@ interface PlayerRepository {
     suspend fun startRadio(
         seed: com.stash.core.data.radio.RadioSeed,
         keepCurrent: Boolean = false,
-    ): Boolean
+    ): com.stash.core.model.RadioStartResult
 
     /** Stop the active station (queued tracks remain; no more auto-grow). */
     fun stopRadio()

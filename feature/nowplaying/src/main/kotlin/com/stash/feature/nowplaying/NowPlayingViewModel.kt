@@ -10,6 +10,7 @@ import com.stash.core.data.lossless.LosslessUpgrader
 import com.stash.core.data.prefs.NowPlayingPreference
 import com.stash.core.data.repository.MusicRepository
 import com.stash.core.media.PlayerRepository
+import com.stash.core.model.RadioStartResult
 import com.stash.core.model.UpgradeResult
 import com.stash.core.model.isFlac
 import com.stash.core.ui.components.PlaylistInfo
@@ -198,19 +199,39 @@ class NowPlayingViewModel @Inject constructor(
     /** Live label of the active radio station (null when no station). */
     val radioSeedLabel: StateFlow<String?> = playerRepository.radioSeedLabel
 
-    /** Start a song radio seeded from the currently-playing track. Streaming-only:
-     *  a false return (streaming off/offline) surfaces a hint, not a dead tap. */
+    /** True from radio tap until the station build returns (success or not). */
+    private val _radioTuning = MutableStateFlow(false)
+    val radioTuning: StateFlow<Boolean> = _radioTuning.asStateFlow()
+
+    /** Start a song radio seeded from the currently-playing track. Streaming-only;
+     *  each [RadioStartResult] failure surfaces its own hint, not a dead tap. */
     fun startRadioFromCurrent() {
         val track = _uiState.value.currentTrack ?: return
+        if (_radioTuning.value) return // ignore taps while tuning
+        // Set SYNCHRONOUSLY (not inside launch) so a double-tap in the same
+        // frame can't pass the guard twice before the coroutine dispatches.
+        _radioTuning.value = true
         viewModelScope.launch {
-            val started = playerRepository.startRadio(
-                com.stash.core.data.radio.RadioSeed.Song(
-                    title = track.title, artist = track.artist, ytVideoId = track.youtubeId,
-                ),
-                // The seed IS the currently-playing track — keep it playing, don't restart.
-                keepCurrent = true,
-            )
-            if (!started) _userMessages.tryEmit("Radio needs Online mode — turn on streaming.")
+            try {
+                val result = playerRepository.startRadio(
+                    com.stash.core.data.radio.RadioSeed.Song(
+                        title = track.title, artist = track.artist, ytVideoId = track.youtubeId,
+                    ),
+                    // The seed IS the currently-playing track — keep it playing, don't restart.
+                    keepCurrent = true,
+                )
+                when (result) {
+                    RadioStartResult.Started -> Unit // sweep locks; no toast
+                    RadioStartResult.StreamingOff ->
+                        _userMessages.tryEmit("Radio needs Online mode — turn on streaming.")
+                    RadioStartResult.PlayerNotReady ->
+                        _userMessages.tryEmit("Player is still starting — try again.")
+                    RadioStartResult.NoStation ->
+                        _userMessages.tryEmit("Couldn't find similar tracks for this song.")
+                }
+            } finally {
+                _radioTuning.value = false
+            }
         }
     }
 

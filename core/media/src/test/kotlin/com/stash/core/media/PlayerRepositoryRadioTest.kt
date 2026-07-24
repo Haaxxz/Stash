@@ -13,6 +13,7 @@ import com.stash.core.data.repository.MusicRepository
 import com.stash.core.media.streaming.ConnectivityMonitor
 import com.stash.core.media.streaming.StreamSourceRegistry
 import com.stash.core.media.streaming.StreamUrlCache
+import com.stash.core.model.RadioStartResult
 import com.stash.core.model.Track
 import io.mockk.coEvery
 import io.mockk.coVerify
@@ -63,13 +64,45 @@ class PlayerRepositoryRadioTest {
 
     private fun track(id: Long) = Track(id = id, title = "t$id", artist = "a", youtubeId = "v$id", isStreamable = true)
 
-    @Test fun `startRadio returns false and does not arm when streaming is off`() = runTest {
+    @Test fun `startRadio returns StreamingOff and does not arm when streaming is off`() = runTest {
         coEvery { streamingPreference.current() } returns false
 
         val started = repo.startRadio(RadioSeed.Artist("My Bloody Valentine", "id"))
 
-        assertThat(started).isFalse()
+        assertThat(started).isEqualTo(RadioStartResult.StreamingOff)
         assertThat(repo.radioSeedLabel.value).isNull()
+        coVerify(exactly = 0) { radioGenerator.start(any()) }
+    }
+
+    @Test fun `startRadio returns PlayerNotReady when the controller cannot connect`() = runTest {
+        coEvery { streamingPreference.current() } returns true
+        // Fresh repo with NO injected controller and a context whose bindService
+        // fails: ensureController()'s real build path yields null.
+        val deadContext = object : android.content.ContextWrapper(
+            ApplicationProvider.getApplicationContext(),
+        ) {
+            override fun bindService(
+                service: android.content.Intent,
+                conn: android.content.ServiceConnection,
+                flags: Int,
+            ): Boolean = false
+        }
+        val coldRepo = PlayerRepositoryImpl(
+            context = deadContext,
+            playbackStateStore = playbackStateStore,
+            musicRepository = musicRepository,
+            streamingPreference = streamingPreference,
+            streamResolver = streamResolver,
+            streamUrlCache = streamUrlCache,
+            connectivity = connectivity,
+            trackDao = trackDao,
+            playbackResumer = PlaybackResumer(playbackStateStore, trackDao),
+            radioGenerator = radioGenerator,
+        )
+
+        val started = coldRepo.startRadio(RadioSeed.Song("t", "a"))
+
+        assertThat(started).isEqualTo(RadioStartResult.PlayerNotReady)
         coVerify(exactly = 0) { radioGenerator.start(any()) }
     }
 
@@ -82,7 +115,7 @@ class PlayerRepositoryRadioTest {
 
         val started = repo.startRadio(RadioSeed.Artist("My Bloody Valentine", "id"))
 
-        assertThat(started).isTrue()
+        assertThat(started).isEqualTo(RadioStartResult.Started)
         verify { controller.setMediaItems(any<List<MediaItem>>(), 0, 0L) }
         verify { controller.play() }
         assertThat(repo.radioSeedLabel.value).isEqualTo("My Bloody Valentine")
@@ -95,12 +128,12 @@ class PlayerRepositoryRadioTest {
         }
     }
 
-    @Test fun `startRadio returns false when the seed yields an empty batch`() = runTest {
+    @Test fun `startRadio returns NoStation when the seed yields an empty batch`() = runTest {
         coEvery { streamingPreference.current() } returns true
         val session = mockk<RadioSession>(relaxed = true)
         coEvery { radioGenerator.start(any()) } returns (session to emptyList())
 
-        assertThat(repo.startRadio(RadioSeed.Song("t", "a"))).isFalse()
+        assertThat(repo.startRadio(RadioSeed.Song("t", "a"))).isEqualTo(RadioStartResult.NoStation)
         assertThat(repo.radioSeedLabel.value).isNull()
     }
 
@@ -143,7 +176,7 @@ class PlayerRepositoryRadioTest {
             RadioSeed.Song("Pancake", "The Swirlies", "v1"), keepCurrent = true,
         )
 
-        assertThat(started).isTrue()
+        assertThat(started).isEqualTo(RadioStartResult.Started)
         // Spliced: removed items after (2..3) and before (0..1) the current one.
         verify { controller.removeMediaItems(2, 3) }
         verify { controller.removeMediaItems(0, 1) }

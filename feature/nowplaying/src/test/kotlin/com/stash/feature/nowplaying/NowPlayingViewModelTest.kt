@@ -10,6 +10,7 @@ import com.stash.core.data.repository.MusicRepository
 import com.stash.core.data.social.LikeCoordinator
 import com.stash.core.media.PlayerRepository
 import com.stash.core.model.PlayerState
+import com.stash.core.model.RadioStartResult
 import com.stash.core.model.Track
 import com.stash.core.model.UpgradeResult
 import com.stash.data.lyrics.LyricsRepository
@@ -446,6 +447,9 @@ class NowPlayingViewModelTrackTapTest {
         // A youtubeId-bearing track makes liveTrackFlow fall through to a
         // by-youtubeId Room lookup; stub it so the combine can populate currentTrack.
         every { musicRepository.observeTrackByYoutubeId(any()) } returns flowOf(null)
+        // Explicit result — a relaxed-mock RadioStartResult matches no branch
+        // of the VM's exhaustive when.
+        coEvery { playerRepository.startRadio(any(), any()) } returns RadioStartResult.Started
         playerStateFlow.value = playerStateFlow.value.copy(
             currentTrack = Track(id = 7L, title = "song", artist = "artist", youtubeId = "vid42"),
         )
@@ -526,4 +530,105 @@ class NowPlayingViewModelTrackTapTest {
 
             coVerify(exactly = 0) { api.resolveArtist(any()) }
         }
+}
+
+/**
+ * [NowPlayingViewModel.startRadioFromCurrent] tuning state + per-cause
+ * messages (spec 2026-07-22 §1): each [RadioStartResult] failure gets its
+ * own snackbar, Started stays silent, and [NowPlayingViewModel.radioTuning]
+ * gates re-entrant taps while the station build is in flight.
+ */
+class NowPlayingViewModelRadioTest {
+
+    private val dispatcher = UnconfinedTestDispatcher()
+
+    @Before fun setUp() { Dispatchers.setMain(dispatcher) }
+    @After fun tearDown() { Dispatchers.resetMain() }
+
+    private val playerStateFlow = MutableStateFlow(PlayerState())
+    private val positionFlow = MutableStateFlow(0L)
+
+    private val playerRepository: PlayerRepository = mockk(relaxed = true) {
+        every { playerState } returns playerStateFlow
+        every { currentPosition } returns positionFlow
+        every { radioSeedLabel } returns MutableStateFlow(null)
+    }
+    private val musicRepository: MusicRepository = mockk(relaxed = true) {
+        every { observeTrackById(any()) } returns flowOf(null)
+        every { observeTrackByYoutubeId(any()) } returns flowOf(null)
+        every { getUserCreatedPlaylists() } returns flowOf(emptyList())
+    }
+    private val likeCoordinator: LikeCoordinator = mockk(relaxed = true) {
+        every { mirrorFailures } returns MutableSharedFlow()
+    }
+
+    /** VM with a youtubeId-bearing track already playing. */
+    private fun playingVm(): NowPlayingViewModel {
+        playerStateFlow.value = playerStateFlow.value.copy(
+            currentTrack = Track(id = 7L, title = "song", artist = "artist", youtubeId = "vid42"),
+        )
+        return NowPlayingViewModel(
+            playerRepository = playerRepository,
+            musicRepository = musicRepository,
+            likeCoordinator = likeCoordinator,
+            losslessUpgrader = mockk(relaxed = true),
+            lyricsRepository = mockk(relaxed = true),
+            lyricsPreference = mockk(relaxed = true),
+            nowPlayingPreference = mockk(relaxed = true),
+            lyricsSidecarWriter = mockk(relaxed = true),
+            appContext = mockk(relaxed = true),
+            ytMusicApiClient = mockk(relaxed = true),
+        )
+    }
+
+    @Test fun `startRadio maps each failure to its own message and toggles tuning`() =
+        runTest(dispatcher) {
+            val vm = playingVm()
+            advanceUntilIdle()
+
+            vm.userMessages.test {
+                coEvery { playerRepository.startRadio(any(), any()) } returns
+                    RadioStartResult.StreamingOff
+                vm.startRadioFromCurrent()
+                advanceUntilIdle()
+                assertEquals("Radio needs Online mode — turn on streaming.", awaitItem())
+
+                coEvery { playerRepository.startRadio(any(), any()) } returns
+                    RadioStartResult.PlayerNotReady
+                vm.startRadioFromCurrent()
+                advanceUntilIdle()
+                assertEquals("Player is still starting — try again.", awaitItem())
+
+                coEvery { playerRepository.startRadio(any(), any()) } returns
+                    RadioStartResult.NoStation
+                vm.startRadioFromCurrent()
+                advanceUntilIdle()
+                assertEquals("Couldn't find similar tracks for this song.", awaitItem())
+
+                coEvery { playerRepository.startRadio(any(), any()) } returns
+                    RadioStartResult.Started
+                vm.startRadioFromCurrent()
+                advanceUntilIdle()
+                // Started emits no message; tuning returned to false.
+                assertEquals(false, vm.radioTuning.value)
+                expectNoEvents()
+            }
+        }
+
+    @Test fun `taps while tuning are ignored`() = runTest(dispatcher) {
+        val vm = playingVm()
+        advanceUntilIdle()
+
+        val gate = CompletableDeferred<RadioStartResult>()
+        coEvery { playerRepository.startRadio(any(), any()) } coAnswers { gate.await() }
+
+        vm.startRadioFromCurrent() // suspends inside the repo call; tuning stays true
+        assertEquals(true, vm.radioTuning.value)
+        vm.startRadioFromCurrent() // ignored — still tuning
+        gate.complete(RadioStartResult.Started)
+        advanceUntilIdle()
+
+        assertEquals(false, vm.radioTuning.value)
+        coVerify(exactly = 1) { playerRepository.startRadio(any(), any()) }
+    }
 }

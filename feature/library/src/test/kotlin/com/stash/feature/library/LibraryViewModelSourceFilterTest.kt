@@ -3,12 +3,9 @@ package com.stash.feature.library
 import com.google.common.truth.Truth.assertThat
 import com.stash.core.auth.TokenManager
 import com.stash.core.auth.model.AuthState
-import com.stash.core.data.prefs.StreamingPreference
 import com.stash.core.data.repository.MusicRepository
-import com.stash.core.media.PlayerRepository
 import com.stash.core.model.PlayerState
 import com.stash.core.model.Track
-import com.stash.data.download.files.LocalImportCoordinator
 import com.stash.data.download.files.LocalImportState
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -26,39 +23,31 @@ import org.mockito.kotlin.any
 import org.mockito.kotlin.doReturn
 import org.mockito.kotlin.mock
 
-/** Task 1: DURATION sort for the Songs list + librarySongCount for the Shuffle hero. */
+/** NON_FLAC source filter — the batch-upgrade worklist (spec 2026-07-22 §3). */
 @OptIn(ExperimentalCoroutinesApi::class)
-class LibraryViewModelSortTest {
+class LibraryViewModelSourceFilterTest {
 
     private val dispatcher = StandardTestDispatcher()
     @Before fun setUp() { Dispatchers.setMain(dispatcher) }
     @After fun tearDown() { Dispatchers.resetMain() }
 
-    private val tracks = listOf(
-        Track(id = 1L, title = "Short", artist = "X", durationMs = 120_000),
-        Track(id = 2L, title = "Long", artist = "X", durationMs = 400_000),
-        Track(id = 3L, title = "Mid", artist = "X", durationMs = 240_000),
-    )
+    private val downloadedOpus =
+        Track(id = 1L, title = "A", artist = "X", isDownloaded = true, fileFormat = "opus")
+    private val downloadedFlac =
+        Track(id = 2L, title = "B", artist = "X", isDownloaded = true, fileFormat = "flac")
+    private val streamOnlyOpus =
+        Track(id = 3L, title = "C", artist = "X", isDownloaded = false, fileFormat = "opus")
 
-    @Test fun duration_sort_orders_tracks_longest_first() = runTest {
-        val vm = buildVm(musicRepoMock(tracks))
-        vm.setSortOrder(SortOrder.DURATION)
+    @Test fun non_flac_keeps_only_downloaded_lossy_tracks() = runTest {
+        val vm = buildVm(musicRepoMock(listOf(downloadedOpus, downloadedFlac, streamOnlyOpus)))
+        vm.setSourceFilter(SourceFilter.NON_FLAC)
 
-        val state = vm.uiState.first { !it.isLoading && it.sortOrder == SortOrder.DURATION }
+        val state = vm.uiState.first { !it.isLoading && it.sourceFilter == SourceFilter.NON_FLAC }
 
-        assertThat(state.tracks.map { it.id }).containsExactly(2L, 3L, 1L).inOrder()
+        assertThat(state.tracks.map { it.id }).containsExactly(1L)
     }
 
-    @Test fun librarySongCount_is_the_unfiltered_total_regardless_of_source_filter() = runTest {
-        val vm = buildVm(musicRepoMock(tracks))
-        vm.setSourceFilter(SourceFilter.FLAC)   // narrows the visible list, NOT the hero count
-
-        val state = vm.uiState.first { !it.isLoading && it.sourceFilter == SourceFilter.FLAC }
-
-        assertThat(state.librarySongCount).isEqualTo(3)
-    }
-
-    // ── harness (mirrors LibraryViewModelMixTest) ─────────────────────────
+    // ── harness (mirrors LibraryViewModelSortTest) ────────────────────────
     private fun musicRepoMock(allTracks: List<Track>): MusicRepository = mock {
         on { getAllTracks() } doReturn flowOf(allTracks)
         on { getAllPlaylists() } doReturn flowOf(emptyList())
@@ -71,7 +60,7 @@ class LibraryViewModelSortTest {
     private fun buildVm(musicRepository: MusicRepository): LibraryViewModel = LibraryViewModel(
         musicRepository = musicRepository,
         playerRepository = mock { on { playerState } doReturn MutableStateFlow(PlayerState()) },
-        tokenManager = mock {
+        tokenManager = mock<TokenManager> {
             on { spotifyAuthState } doReturn MutableStateFlow<AuthState>(AuthState.NotConnected)
             on { youTubeAuthState } doReturn MutableStateFlow<AuthState>(AuthState.NotConnected)
         },

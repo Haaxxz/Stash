@@ -52,6 +52,7 @@ fun LibrarySortFilterSheet(
         "YouTube" to SourceFilter.YOUTUBE,
         "Spotify" to SourceFilter.SPOTIFY,
         "FLAC" to SourceFilter.FLAC,
+        "Non-FLAC" to SourceFilter.NON_FLAC,
     )
 
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {

@@ -94,6 +94,7 @@ fun ArtistDetailScreen(
 
     // Bottom sheet state for the long-press track menu.
     var selectedTrack by remember { mutableStateOf<Track?>(null) }
+    var trackToShare by remember { mutableStateOf<Track?>(null) }
     var trackToSave by remember { mutableStateOf<Track?>(null) }
     val sheetState = rememberModalBottomSheetState()
     val userPlaylists by viewModel.userPlaylists.collectAsStateWithLifecycle(initialValue = emptyList())
@@ -268,8 +269,20 @@ fun ArtistDetailScreen(
                     viewModel.deleteTrack(it)
                     selectedTrack = null
                 },
+                onShare = { trackToShare = it; selectedTrack = null },
             )
         }
+    }
+
+    // ── Share links sheet ──────────────────────────────────────────────────
+    trackToShare?.let { t ->
+        com.stash.core.ui.components.ShareTrackSheet(
+            title = t.title,
+            artist = t.artist,
+            spotifyUri = t.spotifyUri,
+            youtubeId = t.youtubeId,
+            onDismiss = { trackToShare = null },
+        )
     }
 
     // ── Save to Playlist sheet ─────────────────────────────────────────────

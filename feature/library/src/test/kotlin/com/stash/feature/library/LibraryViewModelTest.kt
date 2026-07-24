@@ -237,5 +237,6 @@ class LibraryViewModelTest {
         playlistImageHelper = playlistImageHelper,
         localImportCoordinator = localImportCoordinator,
         streamingPreference = streamingPreference,
+        flacUpgradeEnqueuer = org.mockito.kotlin.mock(),
     )
 }

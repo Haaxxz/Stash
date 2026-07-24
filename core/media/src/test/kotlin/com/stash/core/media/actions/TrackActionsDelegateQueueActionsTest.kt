@@ -96,7 +96,8 @@ class TrackActionsDelegateQueueActionsTest {
     fun `startRadio seeds a song radio from the item`() = runTest {
         val d = delegate().apply { bindToScope(backgroundScope) }
         val slot = slot<com.stash.core.data.radio.RadioSeed>()
-        coEvery { playerRepository.startRadio(capture(slot)) } returns true
+        coEvery { playerRepository.startRadio(capture(slot)) } returns
+            com.stash.core.model.RadioStartResult.Started
 
         d.startRadio(item)
         runCurrent()
@@ -109,9 +110,10 @@ class TrackActionsDelegateQueueActionsTest {
     }
 
     @Test
-    fun `startRadio hints when streaming is off (false return)`() = runTest {
+    fun `startRadio hints when streaming is off (non-Started result)`() = runTest {
         val d = delegate().apply { bindToScope(backgroundScope) }
-        coEvery { playerRepository.startRadio(any()) } returns false
+        coEvery { playerRepository.startRadio(any()) } returns
+            com.stash.core.model.RadioStartResult.NoStation
         val messages = mutableListOf<String>()
         backgroundScope.launch { d.userMessages.collect { messages.add(it) } }
         runCurrent()
