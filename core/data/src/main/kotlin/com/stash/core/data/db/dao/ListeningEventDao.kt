@@ -5,6 +5,7 @@ import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Transaction
+import com.stash.core.data.db.chunkedForBind
 import com.stash.core.data.db.entity.ListeningEventEntity
 import kotlinx.coroutines.flow.Flow
 
@@ -242,7 +243,16 @@ interface ListeningEventDao {
         GROUP BY track_id
         """
     )
-    suspend fun getCompletionStatsSince(trackIds: List<Long>, sinceMs: Long): List<CompletionStats>
+    suspend fun getCompletionStatsSinceRaw(trackIds: List<Long>, sinceMs: Long): List<CompletionStats>
+
+    /**
+     * Chunked wrapper for [getCompletionStatsSinceRaw]: mix scoring passes the
+     * whole downloaded library here, so an unchunked IN() crashed every mix
+     * refresh for >999-track libraries (#337). One row per track (GROUP BY
+     * track_id), so per-chunk results concatenate correctly.
+     */
+    suspend fun getCompletionStatsSince(trackIds: List<Long>, sinceMs: Long): List<CompletionStats> =
+        trackIds.chunkedForBind { getCompletionStatsSinceRaw(it, sinceMs) }
 
     /**
      * Track IDs played at least once since [sinceEpochMs]. Used for the
@@ -280,7 +290,16 @@ interface ListeningEventDao {
      * survivor rotation serve unheard discoveries before repeats.
      */
     @Query("SELECT DISTINCT track_id FROM listening_events WHERE track_id IN (:trackIds)")
-    suspend fun getPlayedTrackIdsAmong(trackIds: List<Long>): List<Long>
+    suspend fun getPlayedTrackIdsAmongRaw(trackIds: List<Long>): List<Long>
+
+    /**
+     * Chunked wrapper for [getPlayedTrackIdsAmongRaw]: the mix survivor
+     * rotation passes the whole library-sized candidate pool, so it must chunk
+     * under the bind cap (#337). Chunks are disjoint, so the DISTINCT track_ids
+     * never collide across chunks.
+     */
+    suspend fun getPlayedTrackIdsAmong(trackIds: List<Long>): List<Long> =
+        trackIds.chunkedForBind { getPlayedTrackIdsAmongRaw(it) }
 
     data class ArtistPlayCount(val artist: String, val plays: Int)
 

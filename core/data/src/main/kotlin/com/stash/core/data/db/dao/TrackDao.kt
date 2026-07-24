@@ -6,15 +6,18 @@ import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Update
+import com.stash.core.data.db.SQLITE_BIND_LIMIT
+import com.stash.core.data.db.chunkedForBind
+import com.stash.core.data.db.chunkedForBindWrite
 import com.stash.core.data.db.entity.TrackEntity
 import kotlinx.coroutines.flow.Flow
 
 /**
  * Max IN() keys per dimension in one [TrackDao.findExistingForBatchRaw] call.
- * Android <= 11 caps a statement at 999 bind variables; 800 + two sentinel
- * pads keeps every chunked query comfortably under it.
+ * Shares the app-wide [SQLITE_BIND_LIMIT] (800, under Android <= 11's 999-var
+ * statement cap) plus two sentinel pads.
  */
-private const val BATCH_BIND_LIMIT = 800
+private const val BATCH_BIND_LIMIT = SQLITE_BIND_LIMIT
 
 /** Never-match pad for unused dimensions in a chunked batch query. */
 private const val BATCH_NEVER_MATCH = "\u0000__stash_never_match__"
@@ -446,13 +449,17 @@ interface TrackDao {
     @Query("SELECT * FROM tracks WHERE id = :trackId LIMIT 1")
     suspend fun getById(trackId: Long): TrackEntity?
 
-    /**
-     * Batch lookup by primary key. SQLite's `IN` does not preserve the
-     * order of [trackIds]; callers that need the original order (e.g.
-     * restoring a persisted playback queue) must re-sort the result.
-     */
     @Query("SELECT * FROM tracks WHERE id IN (:trackIds)")
-    suspend fun getByIds(trackIds: List<Long>): List<TrackEntity>
+    suspend fun getByIdsRaw(trackIds: List<Long>): List<TrackEntity>
+
+    /**
+     * Batch lookup by primary key, chunked so a library-sized id list (e.g. a
+     * >999-track persisted playback queue) can't blow SQLite's bind cap and
+     * crash resume (#337). SQLite's `IN` does not preserve the order of
+     * [trackIds]; callers that need the original order must re-sort the result.
+     */
+    suspend fun getByIds(trackIds: List<Long>): List<TrackEntity> =
+        trackIds.chunkedForBind { getByIdsRaw(it) }
 
     // ── Download tracking ────────────────────────────────────────────────
 
@@ -1711,7 +1718,16 @@ interface TrackDao {
         WHERE id IN (:trackIds)
         """
     )
-    suspend fun bulkResetForReDownload(trackIds: List<Long>)
+    suspend fun bulkResetForReDownloadRaw(trackIds: List<Long>)
+
+    /**
+     * Chunked wrapper for [bulkResetForReDownloadRaw]: the startup integrity
+     * sweep collects every missing-file id, which can be library-sized, so the
+     * reset must chunk under the bind cap (#337). Chunks are separate
+     * statements — wrap in a transaction if all-or-nothing is required.
+     */
+    suspend fun bulkResetForReDownload(trackIds: List<Long>) =
+        trackIds.chunkedForBindWrite { bulkResetForReDownloadRaw(it) }
 
     /**
      * YT-source tracks the Quick-scan backfill should verify. Two routes

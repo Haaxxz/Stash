@@ -6,6 +6,7 @@ import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.ColumnInfo
 import androidx.room.Transaction
+import com.stash.core.data.db.chunkedForBindWrite
 import com.stash.core.data.db.entity.DownloadQueueEntity
 import com.stash.core.model.DownloadFailureType
 import com.stash.core.model.DownloadStatus
@@ -276,7 +277,14 @@ interface DownloadQueueDao {
 
     /** Internal helper: bulk flip a known set of FAILED rows back to PENDING. */
     @Query("UPDATE download_queue SET status='PENDING', error_message=NULL, failure_type='NONE' WHERE id IN (:ids)")
-    suspend fun resetToPending(ids: List<Long>)
+    suspend fun resetToPendingRaw(ids: List<Long>)
+
+    /**
+     * Chunked wrapper for [resetToPendingRaw]: a retry-all over a large failed
+     * batch can exceed the bind cap, so chunk it (#337 class).
+     */
+    suspend fun resetToPending(ids: List<Long>) =
+        ids.chunkedForBindWrite { resetToPendingRaw(it) }
 
     /**
      * Atomic group retry: select all FAILED rows of a given failure type

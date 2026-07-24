@@ -3,6 +3,7 @@ package com.stash.core.data.db.dao
 import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.Query
+import com.stash.core.data.db.chunkedForBind
 import com.stash.core.data.db.entity.TrackSkipEventEntity
 
 /** Per-track skip-rate projection for the recommender's negative weighting. */
@@ -38,7 +39,15 @@ interface TrackSkipEventDao {
         WHERE t.id IN (:trackIds)
         """
     )
-    suspend fun getSkipStatsSince(trackIds: List<Long>, sinceMs: Long): List<TrackSkipStats>
+    suspend fun getSkipStatsSinceRaw(trackIds: List<Long>, sinceMs: Long): List<TrackSkipStats>
+
+    /**
+     * Chunked wrapper for [getSkipStatsSinceRaw]: MixGenerator passes the whole
+     * downloaded library, so an unchunked IN() crashed mix scoring for
+     * >999-track libraries (#337). One row per track, so chunks concatenate.
+     */
+    suspend fun getSkipStatsSince(trackIds: List<Long>, sinceMs: Long): List<TrackSkipStats> =
+        trackIds.chunkedForBind { getSkipStatsSinceRaw(it, sinceMs) }
 
     /**
      * Returns canonical-key set ("$canonicalArtist|$canonicalTitle") for
