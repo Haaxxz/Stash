@@ -865,42 +865,28 @@ class MusicRepositoryImpl @Inject constructor(
             android.util.Log.d("StashCleanup", "Skipped orphan sweep — accumulate mode active")
             return 0
         }
-        val rawOrphans = trackDao.getOrphanedDownloadedTracks()
-        if (rawOrphans.isEmpty()) return 0
+        // Re-evaluate the orphan predicate (membership + active-discovery
+        // exclusion) and delete the rows in ONE transaction, so a track
+        // re-linked by DiffWorker / the mix materializer in the gap can't be
+        // raced and lose its fresh cross-ref + irrecoverable FLAC. Files are
+        // removed only AFTER their rows are gone (a crash mid-file-delete
+        // leaves a harmless orphaned file, never a row pointing at nothing).
+        val deleted = trackDao.deleteOrphanedDownloadedTracks()
+        if (deleted.isEmpty()) return 0
 
-        // Don't delete tracks the Discovery pipeline still owns. A
-        // Discovery download completes, then the weekly mix refresh
-        // clears the playlist_tracks row before re-linking — between
-        // those two writes the track looks orphaned to this sweeper.
-        // Before the guard, that gap was long enough to delete the
-        // audio file (see 2026-04-21 audit: 9 of 10 DONE discovery
-        // entries had dangling track_ids from this race).
-        val protectedIds = discoveryQueueDao.getActiveTrackIds().toHashSet()
-        val orphans = rawOrphans.filterNot { it.id in protectedIds }
-        val skipped = rawOrphans.size - orphans.size
-        if (skipped > 0) {
-            android.util.Log.d(
-                "StashCleanup",
-                "Skipped $skipped orphan(s) protected by active discovery queue",
-            )
-        }
-        if (orphans.isEmpty()) return 0
-
-        for (track in orphans) {
+        for (track in deleted) {
             // Delete the audio file from disk (SAF-aware — see deleteTrackFile).
             track.filePath?.let { deleteTrackFile(it) }
             // Delete locally-stored album art if present.
             track.albumArtPath?.let { deleteTrackFile(it) }
-            // Remove the track entity from the database.
-            trackDao.delete(track)
             _trackDeletions.tryEmit(track.id)
         }
 
         android.util.Log.i(
             "StashCleanup",
-            "Cleaned ${orphans.size} orphaned track(s) and their audio files",
+            "Cleaned ${deleted.size} orphaned track(s) and their audio files",
         )
-        return orphans.size
+        return deleted.size
     }
 
     // ── Art URL migration ──────────────────────────────────────────────

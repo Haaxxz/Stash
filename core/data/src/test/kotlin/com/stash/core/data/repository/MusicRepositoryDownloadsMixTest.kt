@@ -213,34 +213,28 @@ class MusicRepositoryDownloadsMixTest {
         val trackDao = mockk<TrackDao>(relaxed = true)
         val prefs = mockk<SyncPreferencesManager>(relaxed = true)
         coEvery { prefs.anyAccumulate() } returns true
-        coEvery { trackDao.getOrphanedDownloadedTracks() } returns listOf(downloadedTrack(1L))
         val repo = buildRepo(trackDao = trackDao, syncPreferencesManager = prefs)
 
         val cleaned = repo.cleanOrphanedMixTracks()
 
         assertEquals(0, cleaned)
-        coVerify(exactly = 0) { trackDao.delete(any()) }
-        // Gate short-circuits BEFORE the DAO read.
-        coVerify(exactly = 0) { trackDao.getOrphanedDownloadedTracks() }
+        // Gate short-circuits BEFORE the atomic delete runs.
+        coVerify(exactly = 0) { trackDao.deleteOrphanedDownloadedTracks() }
     }
 
     @Test
     fun `cleanOrphanedMixTracks deletes orphans when all sources refresh`() = runTest {
         val trackDao = mockk<TrackDao>(relaxed = true)
-        val discoveryQueueDao = mockk<DiscoveryQueueDao>(relaxed = true)
         val prefs = mockk<SyncPreferencesManager>(relaxed = true)
         coEvery { prefs.anyAccumulate() } returns false
-        coEvery { trackDao.getOrphanedDownloadedTracks() } returns listOf(downloadedTrack(1L))
-        coEvery { discoveryQueueDao.getActiveTrackIds() } returns emptyList()
-        val repo = buildRepo(
-            trackDao = trackDao,
-            discoveryQueueDao = discoveryQueueDao,
-            syncPreferencesManager = prefs,
-        )
+        // The atomic DAO method returns the rows it deleted; the repo then
+        // removes their files and emits deletions.
+        coEvery { trackDao.deleteOrphanedDownloadedTracks() } returns listOf(downloadedTrack(1L))
+        val repo = buildRepo(trackDao = trackDao, syncPreferencesManager = prefs)
 
         val cleaned = repo.cleanOrphanedMixTracks()
 
         assertEquals(1, cleaned)
-        coVerify(exactly = 1) { trackDao.delete(any()) }
+        coVerify(exactly = 1) { trackDao.deleteOrphanedDownloadedTracks() }
     }
 }

@@ -5,6 +5,7 @@ import androidx.room.Delete
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
+import androidx.room.Transaction
 import androidx.room.Update
 import com.stash.core.data.db.SQLITE_BIND_LIMIT
 import com.stash.core.data.db.chunkedForBind
@@ -1184,14 +1185,23 @@ interface TrackDao {
     // ── Orphan detection ───────────────────────────────────────────────
 
     /**
-     * Returns downloaded tracks that have no active playlist membership.
+     * Downloaded tracks safe to auto-delete: no active playlist membership AND
+     * not owned by an in-flight/just-completed discovery row.
      *
      * A track is "orphaned" when it was part of a daily mix that refreshed
      * (its playlist_tracks rows were cleared) and it does not belong to any
-     * other playlist (liked songs, custom, or another mix).
+     * other playlist (liked songs, custom, or another mix). Tracks with
+     * source = 'BOTH' are local/custom imports and are never swept.
      *
-     * Excludes tracks with source = 'BOTH' because those are local/custom
-     * imports that should never be auto-deleted.
+     * The discovery-queue exclusion mirrors [com.stash.core.data.db.dao.DiscoveryQueueDao.getActiveTrackIds]
+     * (status PENDING/DONE): a discovery download completes, then the weekly
+     * mix refresh clears the playlist_tracks row before re-linking, and in
+     * that gap the track looks orphaned. Folding it into this query keeps the
+     * whole orphan check + delete atomic (see [deleteOrphanedDownloadedTracks]).
+     *
+     * Not public API on its own — call [deleteOrphanedDownloadedTracks], which
+     * evaluates this predicate and deletes inside one transaction so a
+     * concurrent re-link can't be raced.
      */
     @Query(
         """
@@ -1202,9 +1212,32 @@ interface TrackDao {
               SELECT pt.track_id FROM playlist_tracks pt
               WHERE pt.removed_at IS NULL
           )
+          AND t.id NOT IN (
+              SELECT dq.track_id FROM discovery_queue dq
+              WHERE dq.track_id IS NOT NULL AND dq.status IN ('PENDING', 'DONE')
+          )
         """
     )
-    suspend fun getOrphanedDownloadedTracks(): List<TrackEntity>
+    suspend fun selectDeletableOrphans(): List<TrackEntity>
+
+    /**
+     * Atomically re-evaluates the orphan predicate and deletes the matching
+     * rows in ONE transaction, returning the deleted entities so the caller can
+     * remove their files afterward.
+     *
+     * Fixes the data-loss race the old read-then-delete had: it read an orphan
+     * snapshot, then (after file I/O) deleted from it — so a track re-linked by
+     * DiffWorker / the mix materializer in that gap was still deleted, taking
+     * its fresh cross-ref (CASCADE) and its irrecoverable FLAC with it
+     * (2026-04-21 audit: 9/10 DONE discovery rows lost this way). Selecting and
+     * deleting in one transaction closes the window.
+     */
+    @Transaction
+    suspend fun deleteOrphanedDownloadedTracks(): List<TrackEntity> {
+        val orphans = selectDeletableOrphans()
+        orphans.forEach { delete(it) }
+        return orphans
+    }
 
     // ── Full-text search ────────────────────────────────────────────────
 
