@@ -240,7 +240,12 @@ class StashApplication : Application(), Configuration.Provider {
             },
         )
         applicationScope.launch {
-            musicRepository.runMigrations()
+            // Best-effort: a startup DB write that throws (e.g.
+            // SQLiteFullException on a device the user filled with FLAC) must
+            // not take down onCreate on EVERY launch — that's a crash loop from
+            // housekeeping. Degrade like the sibling repairs below.
+            runCatching { musicRepository.runMigrations() }
+                .onFailure { Log.w("StashStartup", "runMigrations failed", it) }
         }
         // Reset stale IN_PROGRESS download_queue rows left over from an
         // interrupted worker run / process death. The worker bulk-marks rows
@@ -256,7 +261,8 @@ class StashApplication : Application(), Configuration.Provider {
             }.onFailure { Log.w("StashStartup", "stale IN_PROGRESS reset failed", it) }
         }
         applicationScope.launch {
-            musicRepository.ensureDownloadsMixSeeded()
+            runCatching { musicRepository.ensureDownloadsMixSeeded() }
+                .onFailure { Log.w("StashStartup", "ensureDownloadsMixSeeded failed", it) }
         }
         // One-shot repair (2026-07-05): pre-v0.9.73 lyrics fetches stamped
         // transient failures (timeouts/429s/DNS during bulk bursts) as
@@ -279,7 +285,10 @@ class StashApplication : Application(), Configuration.Provider {
         applicationScope.launch {
             while (true) {
                 kotlinx.coroutines.delay(60_000)
-                losslessPrefetcher.cancelStale()
+                // One bad prune tick must not silently end pruning for the
+                // whole session (unbounded memory growth thereafter).
+                runCatching { losslessPrefetcher.cancelStale() }
+                    .onFailure { Log.w("StashStartup", "prefetch prune tick failed", it) }
             }
         }
         applicationScope.launch {
