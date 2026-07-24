@@ -101,6 +101,39 @@ class DatabaseBackupManager @Inject constructor(
     }
 
     /**
+     * Opens [file] read-only as a SQLite database and runs `PRAGMA
+     * integrity_check`, throwing if it is not a valid, intact database. This is
+     * the gate that keeps a truncated/corrupt backup from ever replacing the
+     * live library. Internal for testing.
+     */
+    internal fun verifyDatabaseIntegrity(file: File) {
+        val db = android.database.sqlite.SQLiteDatabase.openDatabase(
+            file.path, null, android.database.sqlite.SQLiteDatabase.OPEN_READONLY,
+        )
+        db.use {
+            val ok = it.rawQuery("PRAGMA integrity_check", null).use { cursor ->
+                cursor.moveToFirst() && cursor.getString(0).equals("ok", ignoreCase = true)
+            }
+            if (!ok) {
+                throw IllegalStateException("The backup database is corrupt and was not restored.")
+            }
+        }
+    }
+
+    /** Move [src] onto [dest], falling back to copy+delete across filesystems. */
+    private fun moveInto(src: File, dest: File) {
+        if (!src.renameTo(dest)) {
+            src.copyTo(dest, overwrite = true)
+            src.delete()
+        }
+    }
+
+    private fun cleanupStaging(stagedDb: File, stagedDatastore: List<Pair<File, File>>) {
+        stagedDb.delete()
+        stagedDatastore.forEach { (tmp, _) -> tmp.delete() }
+    }
+
+    /**
      * Imports a ZIP backup from [sourceUri], replacing the current DB and settings.
      * Returns the restored external storage URI if found in the preferences.
      */
@@ -137,11 +170,18 @@ class DatabaseBackupManager @Inject constructor(
                 }
             } ?: throw IllegalStateException("Could not open input stream for validation")
 
-            // 2. Close the database to release file locks
-            database.close()
-
             val walFile = File(dbFile.path + "-wal")
             val shmFile = File(dbFile.path + "-shm")
+
+            // 2. Extract everything to STAGING temp files first — never write
+            // over the live database straight from the zip stream. The manifest
+            // sits early in the archive, so a truncated/corrupt backup validates
+            // fine (step 1) and only fails partway through the copy; writing
+            // directly would half-overwrite stash.db and then the old WAL is
+            // deleted below, destroying the user's only library with no rollback.
+            val stagedDb = File(dbFile.parentFile, StashDatabase.DATABASE_NAME + ".import-tmp")
+            stagedDb.delete()
+            val stagedDatastore = mutableListOf<Pair<File, File>>() // tmp -> final
 
             context.contentResolver.openInputStream(sourceUri)?.use { inputStream ->
                 ZipInputStream(inputStream).use { zipIn ->
@@ -152,8 +192,8 @@ class DatabaseBackupManager @Inject constructor(
                             continue
                         }
 
-                        val outFile = when {
-                            entry.name == "stash.db" -> dbFile
+                        val target: File? = when {
+                            entry.name == "stash.db" -> stagedDb
                             entry.name.startsWith("datastore/") -> {
                                 val relativeName = entry.name.substringAfter("datastore/")
                                 if (relativeName.isBlank() || Path.of(relativeName).isAbsolute) {
@@ -166,21 +206,17 @@ class DatabaseBackupManager @Inject constructor(
                                     throw SecurityException("Entry escapes target directory: ${entry.name}")
                                 }
 
-                                resolved.toFile()
+                                val finalFile = resolved.toFile()
+                                val tmp = File(finalFile.path + ".import-tmp")
+                                stagedDatastore.add(tmp to finalFile)
+                                tmp
                             }
                             else -> null
                         }
 
-                        if (outFile != null) {
-                            if (entry.name == "stash.db" && outFile.canonicalFile.path != dbFile.canonicalFile.path) {
-                                throw SecurityException("Invalid DB entry target: ${entry.name}")
-                            }
-
-                            outFile.parentFile?.mkdirs()
-
-                            android.util.Log.d("BackupManager", "Restoring ${entry.name} to ${outFile.absolutePath}")
-
-                            FileOutputStream(outFile).use { output ->
+                        if (target != null) {
+                            target.parentFile?.mkdirs()
+                            FileOutputStream(target).use { output ->
                                 zipIn.copyTo(output)
                             }
                         }
@@ -190,14 +226,40 @@ class DatabaseBackupManager @Inject constructor(
                 }
             } ?: throw IllegalStateException("Could not open input stream for URI: $sourceUri")
 
-            // 3. Delete WAL/SHM files so they don't conflict with the new DB
-            if (walFile.exists()) {
-                android.util.Log.d("BackupManager", "Deleting old WAL file")
-                walFile.delete()
+            // 3. Verify the staged database opens and passes integrity_check
+            // BEFORE we touch the live one. If it doesn't, bail — the live
+            // library is completely untouched.
+            try {
+                if (!stagedDb.exists()) {
+                    throw IllegalStateException("The selected backup contains no database.")
+                }
+                verifyDatabaseIntegrity(stagedDb)
+            } catch (e: Exception) {
+                cleanupStaging(stagedDb, stagedDatastore)
+                throw e
             }
-            if (shmFile.exists()) {
-                android.util.Log.d("BackupManager", "Deleting old SHM file")
-                shmFile.delete()
+
+            // 4. Commit. Close the live DB, keep a rollback copy, then swap the
+            // verified staged files into place. A failure mid-swap restores the
+            // pre-import database, so a restore can never lose data.
+            database.close()
+            val rollback = File(dbFile.path + ".rollback")
+            if (dbFile.exists()) dbFile.copyTo(rollback, overwrite = true) else rollback.delete()
+            try {
+                moveInto(stagedDb, dbFile)
+                // Drop the old WAL/SHM so they don't conflict with the new DB.
+                if (walFile.exists()) walFile.delete()
+                if (shmFile.exists()) shmFile.delete()
+                stagedDatastore.forEach { (tmp, finalFile) ->
+                    finalFile.parentFile?.mkdirs()
+                    moveInto(tmp, finalFile)
+                }
+                rollback.delete()
+            } catch (e: Exception) {
+                android.util.Log.e("BackupManager", "Restore swap failed — rolling back", e)
+                if (rollback.exists()) rollback.copyTo(dbFile, overwrite = true)
+                cleanupStaging(stagedDb, stagedDatastore)
+                throw e
             }
 
             // 4. Read the restored Tree URI from DataStore.
