@@ -231,6 +231,14 @@ class HomeViewModelTest {
             streamingPreference = streamingPreference,
             metadataBackfillState = metadataBackfill,
             homeDiscoveryRepository = discovery,
+            // Discovery on + every section visible = rows fetch, matching the
+            // pre-existing test expectations.
+            homeDiscoveryPreference = mock {
+                on { enabled } doReturn flowOf(true)
+            },
+            homeSectionsPreference = mock {
+                on { visibleSections } doReturn flowOf(com.stash.core.data.prefs.HomeSection.entries.toList())
+            },
             context = mock(),
         )
     }

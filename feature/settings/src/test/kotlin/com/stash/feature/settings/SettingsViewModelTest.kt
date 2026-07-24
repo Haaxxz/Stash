@@ -76,6 +76,10 @@ class SettingsViewModelTest {
         streamingPreference = mockk(relaxed = true),
         crossfadePreference = mockk(relaxed = true),
         databaseBackupManager = mockk(relaxed = true),
+        sleepTimerController = mockk(relaxed = true),
+        homeDiscoveryPreference = mockk(relaxed = true),
+        nowPlayingPreference = mockk(relaxed = true),
+        homeSectionsPreference = mockk(relaxed = true),
     )
 
     @Test fun `onQbdlxEnabledChange persists via setQbdlxEnabled`() = runTest {

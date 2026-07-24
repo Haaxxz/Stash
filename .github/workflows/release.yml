@@ -19,8 +19,37 @@ permissions:
   contents: write  # required to create the GitHub Release and upload assets
 
 jobs:
+  # Gate the release on all test sources compiling. Without this, a signed
+  # APK ships from any `v*` tag even if 14 modules' tests don't compile —
+  # exactly how the PR #305 test break rode into v0.9.78–v0.9.82. Cheap
+  # insurance (~a few minutes) against publishing an unverified build.
+  verify-tests:
+    name: Compile all unit tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle cache
+        uses: gradle/actions/setup-gradle@v6
+
+      - name: Fix gradlew permission
+        run: chmod +x gradlew
+
+      - name: Compile every module's unit tests
+        run: ./gradlew compileDebugUnitTestKotlin --no-daemon
+
   build-release:
     name: Build and publish signed release
+    needs: verify-tests  # no untested/uncompilable build ever ships
     runs-on: ubuntu-latest
 
     steps:
