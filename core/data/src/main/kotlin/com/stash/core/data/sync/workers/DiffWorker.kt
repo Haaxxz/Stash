@@ -234,6 +234,10 @@ class DiffWorker @AssistedInject constructor(
                 )
             )
         } catch (e: Exception) {
+            // A cancelled run (user edits sync settings mid-diff, constraints
+            // drop) is NOT a failure — rethrow so it isn't logged as "Diff
+            // failed" and written FAILED, which pollutes the #337 triage.
+            if (e is kotlinx.coroutines.CancellationException) throw e
             Log.e(TAG, "Diff failed", e)
             syncHistoryDao.updateStatus(
                 id = syncId,

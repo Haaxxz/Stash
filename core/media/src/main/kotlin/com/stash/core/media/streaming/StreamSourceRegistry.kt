@@ -156,6 +156,11 @@ class StreamSourceRegistry @Inject constructor(
         for ((name, fn) in resolvers) {
             val result = runCatching { fn(track) }
                 .onFailure { e ->
+                    // Preemption (user tapped another track) cancels this job;
+                    // the CE MUST propagate, not be swallowed and logged as a
+                    // resolver failure — otherwise resolve() returns null and
+                    // the caller fires a bogus "Couldn't find this track."
+                    if (e is kotlinx.coroutines.CancellationException) throw e
                     // Resolvers should never throw — they catch and return
                     // null. Defensive log so an unexpected throw from one
                     // source doesn't break the chain.

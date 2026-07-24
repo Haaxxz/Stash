@@ -87,6 +87,9 @@ class SyncFinalizeWorker @AssistedInject constructor(
 
             return Result.success()
         } catch (e: Exception) {
+            // A cancelled run is not a failure — rethrow so it isn't recorded
+            // FAILED (keeps cancelled runs out of the #337 triage set).
+            if (e is kotlinx.coroutines.CancellationException) throw e
             Log.e(TAG, "Finalize failed", e)
             syncHistoryDao.updateStatus(
                 id = syncId,

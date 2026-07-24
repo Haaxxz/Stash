@@ -179,6 +179,8 @@ class UpdateCheckWorker(
 
             Result.success()
         } catch (e: Exception) {
+            // Don't turn a cancelled worker into a retry — rethrow the CE.
+            if (e is kotlinx.coroutines.CancellationException) throw e
             Log.e(TAG, "Update check failed", e)
             Result.retry()
         }
