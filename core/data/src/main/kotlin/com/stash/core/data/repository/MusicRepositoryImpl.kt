@@ -404,10 +404,22 @@ class MusicRepositoryImpl @Inject constructor(
             }
         }
 
-        // Upsert by youtube_id, then canonical identity.
+        // Dedup by every UNIQUE key — youtube_id, then spotify_uri — before the
+        // canonical fuzzy match. Missing spotify_uri here used to be harmless
+        // (REPLACE silently absorbed the collision by wiping the existing row);
+        // now that insert ABORTs, an un-deduped spotify_uri would THROW, so a
+        // Spotify track whose canonical identity drifted (feat./remaster tags)
+        // must still resolve to its existing row by URI.
         val youtubeId = track.youtubeId
         if (!youtubeId.isNullOrBlank()) {
             trackDao.findByYoutubeId(youtubeId)?.let { existing ->
+                backfillDurationIfBetter(existing.id, existing.durationMs, track.durationMs)
+                return existing.id
+            }
+        }
+        val spotifyUri = track.spotifyUri
+        if (!spotifyUri.isNullOrBlank()) {
+            trackDao.findBySpotifyUri(spotifyUri)?.let { existing ->
                 backfillDurationIfBetter(existing.id, existing.durationMs, track.durationMs)
                 return existing.id
             }
@@ -552,9 +564,6 @@ class MusicRepositoryImpl @Inject constructor(
         }
         return downloaded.size
     }
-
-    override suspend fun insertPlaylist(playlist: Playlist): Long =
-        playlistDao.insert(playlist.toEntity())
 
     override suspend fun removePlaylist(playlist: Playlist) {
         playlistDao.delete(playlist.toEntity())

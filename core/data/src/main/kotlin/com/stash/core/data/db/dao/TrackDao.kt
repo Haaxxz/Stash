@@ -167,12 +167,19 @@ interface TrackDao {
 
     // ── Inserts ─────────────────────────────────────────────────────────
 
-    /** Insert a single track, replacing on conflict (e.g. same Spotify URI). */
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    /**
+     * Insert a single NEW track. ABORT (not REPLACE) on conflict: `tracks` is a
+     * cascade PARENT (playlist_tracks, lyrics, listening_events, track_tags,
+     * download_queue, …), and REPLACE = DELETE-then-INSERT would cascade-wipe
+     * all of a track's relationships on a spotify_uri/youtube_id collision.
+     * Callers dedup by natural key first (see `ensureTrackPersisted`); a
+     * surviving conflict is a bug and now fails loudly instead of eating data.
+     */
+    @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun insert(track: TrackEntity): Long
 
-    /** Insert multiple tracks, replacing on conflict. */
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    /** Insert multiple NEW tracks; ABORT on conflict — see [insert]. */
+    @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun insertAll(tracks: List<TrackEntity>): List<Long>
 
     // ── Update / Delete ─────────────────────────────────────────────────

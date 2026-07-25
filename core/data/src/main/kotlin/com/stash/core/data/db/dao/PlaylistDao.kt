@@ -34,8 +34,14 @@ interface PlaylistDao {
 
     // ── Inserts ─────────────────────────────────────────────────────────
 
-    /** Insert a playlist, replacing on conflict (e.g. same source_id). */
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    /**
+     * Insert a NEW playlist. ABORT (not REPLACE) on conflict: `playlists` is a
+     * cascade PARENT of playlist_tracks, and REPLACE = DELETE-then-INSERT would
+     * cascade-wipe a playlist's entire membership on a source_id collision.
+     * Callers find-by-source_id first (see [ensurePlaylist]); a surviving
+     * conflict now fails loudly instead of silently emptying the playlist.
+     */
+    @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun insert(playlist: PlaylistEntity): Long
 
     /** Insert without replacing an existing source_id row. */
