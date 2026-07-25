@@ -8,6 +8,7 @@ import com.stash.core.data.lastfm.LastFmCredentials
 import com.stash.core.data.mapper.toDomain
 import com.stash.core.model.MusicSource
 import com.stash.core.model.Track
+import com.stash.data.download.BuildConfig
 import com.stash.data.download.files.AlbumArtCache
 import com.stash.data.download.files.FileOrganizer
 import com.stash.data.download.files.MetadataEmbedder
@@ -212,11 +213,24 @@ class DownloadManager @Inject constructor(
             // tracks (forceLossless=true): the small curated rotating playlist
             // would silently empty if its tracks got stuck in deferral.
             if (!forceLossless && !losslessPrefs.youtubeFallbackEnabledNow()) {
-                Log.i(
-                    TAG,
-                    "deferring '${track.artist} - ${track.title}': lossless unavailable, fallback off",
-                )
-                return TrackDownloadResult.Deferred
+                // Debug/beta builds never bundle lossless credentials (QBDLX_CONFIGURED /
+                // ARCOD_CONFIGURED are false, amz needs none but is proxy-outage-prone) —
+                // respecting "fallback off" here would permanently strand every beta
+                // tester's tracks in WAITING_FOR_LOSSLESS regardless of their toggle.
+                // Force YT fallback on debug builds; release keeps real strict-FLAC.
+                if (BuildConfig.DEBUG) {
+                    Log.i(
+                        TAG,
+                        "debug build: forcing YT fallback for '${track.artist} - ${track.title}' " +
+                            "despite fallback-off (no lossless tokens on beta builds)",
+                    )
+                } else {
+                    Log.i(
+                        TAG,
+                        "deferring '${track.artist} - ${track.title}': lossless unavailable, fallback off",
+                    )
+                    return TrackDownloadResult.Deferred
+                }
             }
         }
 
