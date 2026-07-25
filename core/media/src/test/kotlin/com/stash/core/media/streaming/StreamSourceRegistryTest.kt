@@ -3,6 +3,7 @@ package com.stash.core.media.streaming
 import com.google.common.truth.Truth.assertThat
 import com.stash.core.data.db.entity.TrackEntity
 import com.stash.core.data.prefs.StreamingPreference
+import com.stash.data.download.BuildConfig
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.mockk
@@ -98,7 +99,14 @@ class StreamSourceRegistryTest {
         coVerify { youtube.resolve(track, allowYtDlp = true) }
         coVerify(exactly = 0) { kennyy.resolve(any()) } // parked
         coVerify(exactly = 0) { qobuz.resolve(any()) } // parked
-        coVerify(exactly = 0) { arcod.resolve(any()) } // parked
+        // ARCOD is NOT parked. This is the one case that walks the WHOLE chain,
+        // and resolve() adds arcod whenever the build bundles the private stream
+        // base — so "never called" only holds for an UNCONFIGURED build. The old
+        // unconditional `exactly = 0` passed in CI (no arcod.streamBase there) and
+        // failed on any maintainer machine that has one configured.
+        if (!BuildConfig.ARCOD_CONFIGURED) {
+            coVerify(exactly = 0) { arcod.resolve(any()) }
+        }
     }
 
     /**
