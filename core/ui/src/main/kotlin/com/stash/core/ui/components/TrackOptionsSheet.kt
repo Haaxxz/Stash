@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Album
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.DownloadDone
@@ -68,6 +69,7 @@ fun TrackOptionsSheet(
     onAddToQueue: ((Track) -> Unit)? = null,
     onStartRadio: ((Track) -> Unit)? = null,
     onShare: ((Track) -> Unit)? = null,
+    onViewAlbum: ((Track) -> Unit)? = null,
     onDownload: ((Track) -> Unit)? = null,
     onRemoveDownload: ((Track) -> Unit)? = null,
     onDelete: ((Track) -> Unit)? = null,
@@ -195,6 +197,15 @@ fun TrackOptionsSheet(
                 icon = Icons.Default.Share,
                 label = "Share",
                 onClick = { onShare(track) },
+            )
+        }
+
+        // -- View Album option --
+        if (onViewAlbum != null) {
+            SheetOptionRow(
+                icon = Icons.Default.Album,
+                label = "View Album",
+                onClick = { onViewAlbum(track) },
             )
         }
 
