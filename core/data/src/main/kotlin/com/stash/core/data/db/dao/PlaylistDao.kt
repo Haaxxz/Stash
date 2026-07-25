@@ -47,6 +47,67 @@ interface PlaylistDao {
     suspend fun insertCrossRef(crossRef: PlaylistTrackCrossRef)
 
     /**
+     * Atomically rewrite a mix playlist's ordered membership: clear the old
+     * cross-refs, rename, reinsert in [orderedTrackIds] order, and set the
+     * count — all in ONE transaction (audit: materializeMix FK-787 window).
+     *
+     * If a track in [orderedTrackIds] was deleted concurrently, its
+     * insertCrossRef raises SQLITE_CONSTRAINT_FOREIGNKEY (787) and the whole
+     * swap rolls back, so the mix keeps its PREVIOUS membership instead of
+     * being left as a torn prefix; the refresh just retries next cycle. Same
+     * protection against process death mid-rewrite.
+     */
+    @Transaction
+    suspend fun replaceMixMembership(
+        playlistId: Long,
+        orderedTrackIds: List<Long>,
+        name: String,
+        addedAt: java.time.Instant,
+    ) {
+        clearPlaylistTracks(playlistId)
+        updateName(playlistId, name)
+        orderedTrackIds.forEachIndexed { position, trackId ->
+            insertCrossRef(
+                PlaylistTrackCrossRef(
+                    playlistId = playlistId,
+                    trackId = trackId,
+                    position = position,
+                    addedAt = addedAt,
+                )
+            )
+        }
+        updateTrackCount(playlistId, orderedTrackIds.size)
+    }
+
+    /**
+     * Atomically create a fresh mix playlist and populate its ordered
+     * membership + count in ONE transaction, returning the new id. Same
+     * FK-787 / process-death rollback protection as [replaceMixMembership]:
+     * a concurrent delete rolls the whole create back rather than leaving a
+     * half-populated new mix.
+     */
+    @Transaction
+    suspend fun createMixWithMembership(
+        playlist: PlaylistEntity,
+        orderedTrackIds: List<Long>,
+        addedAt: java.time.Instant,
+    ): Long {
+        val playlistId = insert(playlist)
+        orderedTrackIds.forEachIndexed { position, trackId ->
+            insertCrossRef(
+                PlaylistTrackCrossRef(
+                    playlistId = playlistId,
+                    trackId = trackId,
+                    position = position,
+                    addedAt = addedAt,
+                )
+            )
+        }
+        updateTrackCount(playlistId, orderedTrackIds.size)
+        return playlistId
+    }
+
+    /**
      * Returns the existing cross-reference for (playlistId, trackId) if any,
      * so the caller can preserve `addedAt` when re-inserting (otherwise
      * REPLACE would reset it every sync, breaking chronological ordering in

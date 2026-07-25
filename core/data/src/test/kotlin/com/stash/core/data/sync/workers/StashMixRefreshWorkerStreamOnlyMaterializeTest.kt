@@ -26,10 +26,10 @@ import com.stash.core.model.PlaylistType
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.mockk
+import io.mockk.slot
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
@@ -119,24 +119,25 @@ class StashMixRefreshWorkerStreamOnlyMaterializeTest {
             playlistDao.getStreamableOrDoneTrackIdsForRecipe(1L)
         } returns listOf(downloadedTrackId, streamOnlyTrackId)
 
-        val insertedCrossRefs = mutableListOf<PlaylistTrackCrossRef>()
-        coEvery { playlistDao.insertCrossRef(capture(insertedCrossRefs)) } returns Unit
+        // Membership is written atomically via replaceMixMembership (audit:
+        // FK-787 torn-prefix guard) — assert on the ordered ids handed to that
+        // transaction rather than on individual insertCrossRef calls, which now
+        // live inside the @Transaction default method (invisible on a mock).
+        val ordered = slot<List<Long>>()
+        coEvery {
+            playlistDao.replaceMixMembership(any(), capture(ordered), any(), any())
+        } returns Unit
 
         newWorker(recipeId = 1L).doWork()
 
         // BOTH ids must have been linked to the Mix playlist (id=100L).
-        val linkedTrackIds = insertedCrossRefs
-            .filter { it.playlistId == 100L }
-            .map { it.trackId }
-            .toSet()
+        coVerify(exactly = 1) {
+            playlistDao.replaceMixMembership(eq(100L), any(), any(), any())
+        }
         assertEquals(
             "materializeMix must link both downloaded and stream-only DONE survivors",
             setOf(downloadedTrackId, streamOnlyTrackId),
-            linkedTrackIds,
-        )
-        assertTrue(
-            "every linked row must point at the materialized Mix playlist",
-            insertedCrossRefs.all { it.playlistId == 100L },
+            ordered.captured.toSet(),
         )
 
         // Legacy DAO method MUST NOT be used as the survivor source — if it
@@ -179,9 +180,12 @@ class StashMixRefreshWorkerStreamOnlyMaterializeTest {
 
         newWorker(recipeId = 1L).doWork()
 
-        // No destructive churn: neither the clear nor any cross-ref insert runs.
-        coVerify(exactly = 0) { playlistDao.clearPlaylistTracks(100L) }
-        coVerify(exactly = 0) { playlistDao.insertCrossRef(any()) }
+        // No destructive churn: the atomic membership swap must not run at all.
+        // (clearPlaylistTracks/insertCrossRef now live inside the @Transaction
+        // method, so they can't be observed on a relaxed mock — assert on the
+        // txn boundary itself, or a removed short-circuit would pass silently.)
+        coVerify(exactly = 0) { playlistDao.replaceMixMembership(any(), any(), any(), any()) }
+        coVerify(exactly = 0) { playlistDao.createMixWithMembership(any(), any(), any()) }
     }
 
     @Test fun `materializeMix re-materializes when membership order differs`() = runTest {
@@ -206,16 +210,22 @@ class StashMixRefreshWorkerStreamOnlyMaterializeTest {
         // Same ids but DIFFERENT order → not equal → must re-materialize.
         coEvery { playlistDao.getOrderedTrackIdsForPlaylist(100L) } returns listOf(777L, 555L)
 
-        val insertedCrossRefs = mutableListOf<PlaylistTrackCrossRef>()
-        coEvery { playlistDao.insertCrossRef(capture(insertedCrossRefs)) } returns Unit
+        val ordered = slot<List<Long>>()
+        coEvery {
+            playlistDao.replaceMixMembership(any(), capture(ordered), any(), any())
+        } returns Unit
 
         newWorker(recipeId = 1L).doWork()
 
-        coVerify(exactly = 1) { playlistDao.clearPlaylistTracks(100L) }
+        // A differing order must trigger exactly one atomic re-materialize,
+        // carrying the freshly-computed order.
+        coVerify(exactly = 1) {
+            playlistDao.replaceMixMembership(eq(100L), any(), any(), any())
+        }
         assertEquals(
             "differing order must trigger a full re-materialize in the new order",
             listOf(555L, 777L),
-            insertedCrossRefs.filter { it.playlistId == 100L }.map { it.trackId },
+            ordered.captured,
         )
     }
 

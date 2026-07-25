@@ -662,10 +662,22 @@ class StashMixRefreshWorker @AssistedInject constructor(
             }
         }
 
-        // Find-or-create the backing playlist row.
+        // Rewrite membership ATOMICALLY (audit: the old clear → reinsert →
+        // count ran as separate autocommits, so a concurrent track delete —
+        // user delete or the orphan sweep — hit insertCrossRef with FK 787
+        // and left the mix a torn prefix, whose unlinked survivors the next
+        // sweep then garbage-collected). Inside one transaction the same
+        // race rolls the whole rewrite back: the mix keeps its previous
+        // membership and the next refresh simply retries. totalCount ==
+        // finalOrderedIds.size, so the count lands inside the txn too.
+        val nowInstant = Instant.ofEpochMilli(now)
         val playlistId = if (existing != null) {
-            playlistDao.clearPlaylistTracks(existing.id)
-            playlistDao.updateName(existing.id, recipe.name)
+            playlistDao.replaceMixMembership(
+                playlistId = existing.id,
+                orderedTrackIds = finalOrderedIds,
+                name = recipe.name,
+                addedAt = nowInstant,
+            )
             existing.id
         } else {
             val firstArt = tracks.firstNotNullOfOrNull { it.albumArtUrl }
@@ -679,20 +691,7 @@ class StashMixRefreshWorker @AssistedInject constructor(
                 syncEnabled = true,
                 isActive = true,
             )
-            playlistDao.insert(newPlaylist)
-        }
-
-        // Rebuild track membership in the final order computed above.
-        val nowInstant = Instant.ofEpochMilli(now)
-        finalOrderedIds.forEachIndexed { position, trackId ->
-            playlistDao.insertCrossRef(
-                PlaylistTrackCrossRef(
-                    playlistId = playlistId,
-                    trackId = trackId,
-                    position = position,
-                    addedAt = nowInstant,
-                )
-            )
+            playlistDao.createMixWithMembership(newPlaylist, finalOrderedIds, nowInstant)
         }
 
         // v0.9.40: build an album mosaic from the FULL linked track set
@@ -702,13 +701,12 @@ class StashMixRefreshWorker @AssistedInject constructor(
         // tracks carry album art. Up to 4 distinct arts, "|"-joined: the mix
         // card renders a tile mosaic, and single-image call sites take the
         // first (PlaylistMapper). Recomputed every refresh, so the mosaic
-        // fills in once stub art is backfilled. Query runs AFTER the cross-refs
-        // above so it sees the full membership.
+        // fills in once stub art is backfilled. Cosmetic, so it deliberately
+        // stays OUTSIDE the membership transaction, reading the committed rows.
         val coverArtUrls = playlistDao.getCoverArtUrlsForPlaylist(playlistId, limit = 4)
         if (coverArtUrls.isNotEmpty()) {
             playlistDao.updateArtUrl(playlistId, coverArtUrls.joinToString("|"))
         }
-        playlistDao.updateTrackCount(playlistId, totalCount)
         return MaterializeResult(playlistId, discoveryTrackIds)
     }
 
