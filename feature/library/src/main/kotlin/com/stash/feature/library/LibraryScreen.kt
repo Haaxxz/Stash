@@ -1444,17 +1444,10 @@ private fun TracksTab(
                 onAddToQueue = { onAddToQueue(it); selectedTrack = null },
                 onSaveToPlaylist = { trackToSave = it; selectedTrack = null },
                 onShare = { trackToShare = it; selectedTrack = null },
+                onViewAlbum = { onViewAlbum(it); selectedTrack = null },
                 onDownload = { onDownloadTrack(it.id); selectedTrack = null },
                 onRemoveDownload = { onRemoveDownloadTrack(it.id); selectedTrack = null },
                 onDelete = { trackToDelete = it; selectedTrack = null },
-            )
-            BottomSheetActionRow(
-                icon = Icons.Default.Album,
-                label = "View Album",
-                onClick = {
-                    onViewAlbum(track)
-                    selectedTrack = null
-                },
             )
 
             // Bottom padding for gesture navigation inset
