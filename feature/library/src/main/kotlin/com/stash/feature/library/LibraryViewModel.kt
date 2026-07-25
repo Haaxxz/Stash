@@ -17,8 +17,10 @@ import com.stash.core.model.Playlist
 import com.stash.core.model.Track
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -267,11 +269,17 @@ class LibraryViewModel @Inject constructor(
         libraryState.copy(
             currentlyPlayingTrackId = playerState.currentTrack?.id,
         )
-    }.stateIn(
-        scope = viewModelScope,
-        started = SharingStarted.WhileSubscribed(5_000),
-        initialValue = LibraryUiState(),
-    )
+    }
+        // The whole filter+sort+lowercase pipeline above re-runs on every
+        // keystroke AND every Room invalidation; on a >1k-track library that
+        // was dropped frames on Main (audit finding). Pure list work — run it
+        // on Default and hand only the finished state to the UI.
+        .flowOn(Dispatchers.Default)
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5_000),
+            initialValue = LibraryUiState(),
+        )
 
     // ── Liked subcategory (browse + sift likes by origin) ────────────────
 
@@ -322,7 +330,11 @@ class LibraryViewModel @Inject constructor(
                 val query = controls.searchQuery.trim().lowercase()
                 if (query.isEmpty()) tracks else tracks.filter { it.matchesQuery(query) }
             }
-        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+        }
+            // Same rationale as uiState: dedupe + search filtering is pure
+            // list work — keep it off Main.
+            .flowOn(Dispatchers.Default)
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     /** Play the liked list starting at [track] (offline-aware, like the detail screen). */
     fun playLiked(track: Track) {
