@@ -62,6 +62,8 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.shareIn
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.guava.await
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
@@ -228,16 +230,32 @@ class PlayerRepositoryImpl @Inject constructor(
     override val playerState: StateFlow<PlayerState> = _playerState.asStateFlow()
 
     /**
-     * Emits the playback position every 250 ms while the player is active.
-     * Collectors receive 0 when nothing is playing.
+     * Playback position ticker: 250 ms while playing, 1 s while paused (just
+     * enough to catch a seek-while-paused). Collectors receive 0 when nothing
+     * is playing.
+     *
+     * ONE shared ticker (audit finding): the old cold flow ran a private
+     * 4 Hz Main-thread poll PER collector — every retained NowPlayingViewModel
+     * (activity-scoped MiniPlayer + nav entries; a heap dump showed 6 live)
+     * plus ListeningRecorder each span their own timer, forever, even while
+     * paused. shareIn collapses them to one; distinctUntilChanged keeps
+     * identical positions (i.e. the whole time playback is paused) from
+     * reaching collectors at all.
      */
     override val currentPosition: Flow<Long> = flow {
         while (true) {
-            val controller = controllerDeferred
-            emit(controller?.currentPosition ?: 0L)
-            delay(POSITION_UPDATE_INTERVAL_MS)
+            emit(controllerDeferred?.currentPosition ?: 0L)
+            val interval = if (_playerState.value.isPlaying) {
+                POSITION_UPDATE_INTERVAL_MS
+            } else {
+                PAUSED_POSITION_UPDATE_INTERVAL_MS
+            }
+            delay(interval)
         }
-    }.flowOn(Dispatchers.Main)
+    }
+        .distinctUntilChanged()
+        .flowOn(Dispatchers.Main)
+        .shareIn(scope, SharingStarted.WhileSubscribed(), replay = 1)
 
     /** Cached [MediaController] instance; null until [ensureController] succeeds.
      * Internal as a test seam: gate/queue tests inject a mock controller here. */
@@ -1847,6 +1865,10 @@ class PlayerRepositoryImpl @Inject constructor(
     companion object {
         private const val TAG = "StashPlayer"
         private const val POSITION_UPDATE_INTERVAL_MS = 250L
+
+        /** Ticker interval while playback is paused — catches seek-while-paused
+         *  without burning 4 Hz wakeups on a stationary position. */
+        private const val PAUSED_POSITION_UPDATE_INTERVAL_MS = 1_000L
 
         /** Auto-grow fires once the remaining queue tail drops below this many tracks. */
         private const val RADIO_GROW_THRESHOLD = 5
