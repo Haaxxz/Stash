@@ -442,6 +442,7 @@ fun NowPlayingScreen(
                 TopBar(
                     onDismiss = onDismiss,
                     onMoreClick = { showOptionsSheet = true },
+                    onQueueClick = { showQueue = true },
                     hasTrack = uiState.hasTrack,
                     isDownloading = isDownloadingCurrent,
                     // Radio toggle: start a station seeded from this song, or stop
@@ -658,11 +659,9 @@ fun NowPlayingScreen(
     if (showOptionsSheet && track != null) {
         NowPlayingOptionsSheet(
             isDownloaded = track.isDownloaded,
-            queueSize = uiState.queueSize,
             onSaveClick = { showSaveSheet = true },
             onDownloadTap = viewModel::toggleDownloadForCurrentTrack,
             onShareClick = viewModel::onShareCurrent,
-            onQueueClick = { showQueue = true },
             onFlagWrongMatch = { showWrongMatchDialog = true },
             onViewAlbum = viewModel::onViewAlbumTapped,
             onDismiss = { showOptionsSheet = false },
@@ -676,17 +675,20 @@ fun NowPlayingScreen(
 // ---------------------------------------------------------------------------
 
 /**
- * Top bar with dismiss button, radio toggle, and a "more" trigger that
- * opens [NowPlayingOptionsSheet] (Save / Download / Share / Queue / Flag).
+ * Top bar: dismiss, radio toggle, a "more" kebab that opens
+ * [NowPlayingOptionsSheet] (Save / Download / Share / View Album / Flag), and a
+ * dedicated Queue button pinned to the far-right edge.
  *
- * @param onDismiss   Callback when the down-arrow is tapped.
- * @param onMoreClick Callback when the kebab (more actions) icon is tapped.
- * @param hasTrack    Whether a track is currently loaded.
+ * @param onDismiss    Callback when the down-arrow is tapped.
+ * @param onMoreClick  Callback when the kebab (more actions) icon is tapped.
+ * @param onQueueClick Callback when the far-right Queue icon is tapped.
+ * @param hasTrack     Whether a track is currently loaded.
  */
 @Composable
 private fun TopBar(
     onDismiss: () -> Unit,
     onMoreClick: () -> Unit,
+    onQueueClick: () -> Unit,
     hasTrack: Boolean,
     isDownloading: Boolean,
     radioActive: Boolean,
@@ -748,7 +750,7 @@ private fun TopBar(
         }
 
         // More actions — opens the options sheet (Save, Download, Share,
-        // Queue, Flag). While a download is in flight a spinner replaces
+        // Flag, View Album). While a download is in flight a spinner replaces
         // the icon so it isn't a silent background job.
         if (hasTrack) {
             if (isDownloading) {
@@ -771,6 +773,18 @@ private fun TopBar(
                         modifier = Modifier.size(24.dp),
                     )
                 }
+            }
+
+            // Queue — a permanent, dedicated control at the far-right edge
+            // (not buried in the options sheet); it's the one action users
+            // reach for constantly while a song is playing.
+            IconButton(onClick = onQueueClick) {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.QueueMusic,
+                    contentDescription = "Queue",
+                    tint = npInk(),
+                    modifier = Modifier.size(24.dp),
+                )
             }
         }
     }
@@ -1042,19 +1056,17 @@ private fun QualityLine(
 
 /**
  * Premium track options bottom sheet, opened via the [TopBar]'s "more"
- * kebab icon. Consolidates Save / Download / Share / Queue / Flag so the
- * TopBar itself only carries Dismiss + Radio (the two actions worth a
- * permanent icon).
+ * kebab icon. Consolidates Save / Download / Share / View Album / Flag. Queue
+ * is NOT here — it has its own permanent icon at the TopBar's far right, next
+ * to Dismiss and Radio.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun NowPlayingOptionsSheet(
     isDownloaded: Boolean,
-    queueSize: Int,
     onSaveClick: () -> Unit,
     onDownloadTap: () -> Unit,
     onShareClick: () -> Unit,
-    onQueueClick: () -> Unit,
     onFlagWrongMatch: () -> Unit,
     onViewAlbum: () -> Unit,
     onDismiss: () -> Unit,
@@ -1082,18 +1094,6 @@ private fun NowPlayingOptionsSheet(
                     .padding(bottom = 20.dp)
                     .align(Alignment.CenterHorizontally)
             )
-
-            // View Queue
-            SheetOptionRow(
-                icon = Icons.AutoMirrored.Filled.QueueMusic,
-                label = "Queue ($queueSize)",
-                onClick = {
-                    onQueueClick()
-                    onDismiss()
-                }
-            )
-
-            Spacer(modifier = Modifier.height(8.dp))
 
             // Save to Playlist
             SheetOptionRow(
