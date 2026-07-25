@@ -778,7 +778,15 @@ class PlaylistFetchWorker @AssistedInject constructor(
                         val paged = result.data
                         val userPlaylists = paged.playlists
                         val partialMsg = if (paged.partial) "partial library list: ${paged.partialReason}" else null
-                        diagnostics.add(...)
+                        diagnostics.add(
+                            SyncStepResult(
+                                "YOUTUBE",
+                                "getUserPlaylists",
+                                StepStatus.SUCCESS,
+                                userPlaylists.size,
+                                errorMessage = partialMsg,
+                            )
+                        )
                         if (paged.partial) {
                             Log.w(TAG, "fetchYouTubePlaylists: user playlists list partial — ${paged.partialReason}")
                             markYoutubeIncomplete("getUserPlaylists partial: ${paged.partialReason}")
