@@ -68,5 +68,6 @@ class LibraryViewModelSourceFilterTest {
         localImportCoordinator = mock { on { state } doReturn MutableStateFlow<LocalImportState>(LocalImportState.Idle) },
         streamingPreference = mock(),
         flacUpgradeEnqueuer = mock(),
+        ytMusicApiClient = mock(),
     )
 }

@@ -71,21 +71,44 @@ class SleepTimerControllerTest {
     }
 
     @Test
-    fun `end of track pauses on the next track transition only`() = runTest {
+    fun `end of track pauses when the current track nears its end`() = runTest {
+        val position = MutableStateFlow(0L)
+        every { playerRepository.currentPosition } returns position
+        playerState.value = PlayerState(currentTrack = track(1), durationMs = 100_000L)
+
         val timer = SleepTimerController(playerRepository, backgroundScope)
-
-        timer.stopAtEndOfTrack()
+        timer.stopAtEndOfTrack(fadeOutMs = 0L) // no fade → pause the instant we hit the window
         runCurrent()
         coVerify(exactly = 0) { playerRepository.pause() }
 
-        // Same track re-emission (pause/resume churn) must not trigger it.
-        playerState.value = PlayerState(currentTrack = track(1), isPlaying = false)
+        // Mid-track: nowhere near the end → no pause.
+        position.value = 50_000L
         runCurrent()
         coVerify(exactly = 0) { playerRepository.pause() }
 
-        playerState.value = PlayerState(currentTrack = track(2))
+        // At the end of the track → pause and disarm.
+        position.value = 100_000L
         runCurrent()
         coVerify(exactly = 1) { playerRepository.pause() }
+        assertThat(timer.state.value).isEqualTo(SleepTimerController.State.Off)
+    }
+
+    @Test
+    fun `end of track disarms without pausing when the user skips to another track`() = runTest {
+        val position = MutableStateFlow(0L)
+        every { playerRepository.currentPosition } returns position
+        playerState.value = PlayerState(currentTrack = track(1), durationMs = 100_000L)
+
+        val timer = SleepTimerController(playerRepository, backgroundScope)
+        timer.stopAtEndOfTrack()
+        runCurrent()
+
+        // User skips to a different track before it ended → disarm, don't pause.
+        playerState.value = PlayerState(currentTrack = track(2), durationMs = 100_000L)
+        position.value = 1L // nudge a re-collect so the track-change check runs
+        runCurrent()
+
+        coVerify(exactly = 0) { playerRepository.pause() }
         assertThat(timer.state.value).isEqualTo(SleepTimerController.State.Off)
     }
 

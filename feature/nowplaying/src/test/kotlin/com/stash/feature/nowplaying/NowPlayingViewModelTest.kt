@@ -220,6 +220,7 @@ class NowPlayingViewModelFindInFlacTest {
         nowPlayingPreference = nowPlayingPreference,
         lyricsSidecarWriter = mockk(relaxed = true),
         appContext = appContext,
+        sleepTimerController = mockk(relaxed = true),
         ytMusicApiClient = mockk(relaxed = true),
     )
 
@@ -366,6 +367,7 @@ class NowPlayingViewModelLikeRoutingTest {
         nowPlayingPreference = mockk(relaxed = true),
         lyricsSidecarWriter = mockk(relaxed = true),
         appContext = appContext,
+        sleepTimerController = mockk(relaxed = true),
         ytMusicApiClient = mockk(relaxed = true),
     )
 
@@ -440,6 +442,7 @@ class NowPlayingViewModelTrackTapTest {
         nowPlayingPreference = mockk(relaxed = true),
         lyricsSidecarWriter = mockk(relaxed = true),
         appContext = appContext,
+        sleepTimerController = mockk(relaxed = true),
         ytMusicApiClient = api,
     )
 
@@ -577,6 +580,7 @@ class NowPlayingViewModelRadioTest {
             nowPlayingPreference = mockk(relaxed = true),
             lyricsSidecarWriter = mockk(relaxed = true),
             appContext = mockk(relaxed = true),
+            sleepTimerController = mockk(relaxed = true),
             ytMusicApiClient = mockk(relaxed = true),
         )
     }
