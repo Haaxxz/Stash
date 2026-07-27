@@ -16,5 +16,11 @@ data class SyncStepResult(
     val httpCode: Int? = null,
 )
 
+/**
+ * [SKIPPED] means the user switched that step off — it is NOT evidence of
+ * anything working or failing. Distinct from [EMPTY] (the call ran and returned
+ * nothing, which can be a real bug) so a diagnostics bundle doesn't send anyone
+ * hunting an API that was simply never called.
+ */
 @Serializable
-enum class StepStatus { SUCCESS, EMPTY, ERROR }
+enum class StepStatus { SUCCESS, EMPTY, ERROR, SKIPPED }

@@ -123,6 +123,11 @@ data class SyncUiState(
      */
     val youtubeLikedStudioOnly: Boolean = false,
     /**
+     * Whether sync discovers the service's own algorithmic mixes. Default true
+     * (opt-out) — see SyncPreferencesManager.discoverAutoMixes.
+     */
+    val discoverAutoMixes: Boolean = true,
+    /**
      * Days-of-week bitmask for the auto-sync schedule. Bit 0 = Mon … bit 6 = Sun.
      * Default 127 = every day.
      */
@@ -443,6 +448,17 @@ class SyncViewModel @Inject constructor(
         }
     }
 
+    /**
+     * Turn discovery of the service's own algorithmic mixes on/off (#335, #344).
+     * Off stops them being fetched at all, which also shortens every sync.
+     * Mixes already in the library are left alone — this is not a delete.
+     */
+    fun onDiscoverAutoMixesChanged(enabled: Boolean) {
+        viewModelScope.launch {
+            syncPreferencesManager.setDiscoverAutoMixes(enabled)
+        }
+    }
+
     /** Persists the days-of-week selection. UI passes the new bitmask. */
     fun onSyncDaysChanged(bitmask: Int) {
         viewModelScope.launch {
@@ -490,6 +506,11 @@ class SyncViewModel @Inject constructor(
         viewModelScope.launch {
             syncPreferencesManager.youtubeLikedStudioOnly.collect { enabled ->
                 _uiState.update { it.copy(youtubeLikedStudioOnly = enabled) }
+            }
+        }
+        viewModelScope.launch {
+            syncPreferencesManager.discoverAutoMixes.collect { enabled ->
+                _uiState.update { it.copy(discoverAutoMixes = enabled) }
             }
         }
         viewModelScope.launch {

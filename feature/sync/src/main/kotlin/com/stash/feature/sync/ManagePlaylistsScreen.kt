@@ -43,6 +43,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.stash.core.model.PlaylistType
 import com.stash.core.ui.theme.StashTheme
+import com.stash.core.common.extensions.pluralize
 
 /**
  * Full-screen, search-first playlist management for one sync source. Hosts the
@@ -191,11 +192,21 @@ fun ManagePlaylistsScreen(
                 }
 
                 // -- Mixes (auto) ----------------------------------------------
+                // The section header always renders, even with no mixes yet, so
+                // the discovery switch is reachable BEFORE the first sync pulls
+                // any in — otherwise the only way to stop mixes appearing is to
+                // let them appear first (#335, #344).
+                item(key = "mixes-label") { ManageSectionLabel("Mixes (auto)") }
+                item(key = "mixes-discovery") {
+                    DiscoverMixesRow(
+                        enabled = uiState.discoverAutoMixes,
+                        onChange = viewModel::onDiscoverAutoMixesChanged,
+                    )
+                }
                 if (visibleMixes.isNotEmpty()) {
-                    item(key = "mixes-label") { ManageSectionLabel("Mixes (auto)") }
                     item(key = "mixes-summary") {
                         Text(
-                            text = "${visibleMixes.size} mixes · surfaced on Home",
+                            text = "${pluralize(visibleMixes.size, "mix", "mixes")} · surfaced on Home",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.padding(bottom = 4.dp),
@@ -282,6 +293,49 @@ private fun ManageSectionLabel(text: String) {
         letterSpacing = 0.5.sp,
         modifier = Modifier.padding(top = 12.dp, bottom = 4.dp),
     )
+}
+
+/**
+ * Master switch for discovering the service's own algorithmic mixes.
+ *
+ * Distinct from [MixHideRow] below, and the difference is the whole point:
+ * hiding a mix removes it from Home but sync still fetches it every run. This
+ * stops them being fetched at all, which is what shortens the sync people were
+ * complaining about (#344), and stops new ones appearing (#335).
+ */
+@Composable
+private fun DiscoverMixesRow(
+    enabled: Boolean,
+    onChange: (Boolean) -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onChange(!enabled) }
+            .padding(vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = "Discover mixes automatically",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+            Text(
+                text = if (enabled) {
+                    "Daily Mixes and similar are added as they appear"
+                } else {
+                    "Off — no new mixes are added, and syncs run shorter"
+                },
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        com.stash.core.ui.components.StashSwitch(
+            checked = enabled,
+            onCheckedChange = onChange,
+        )
+    }
 }
 
 /**

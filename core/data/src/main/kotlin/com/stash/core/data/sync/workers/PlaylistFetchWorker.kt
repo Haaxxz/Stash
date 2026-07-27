@@ -82,6 +82,21 @@ private val DAILY_MIX_NAME = Regex("""Daily Mix \d+""")
  * ([homeFeedMixIds]), plus "Daily Mix N" by name so the home feed stays
  * the single source of those even when the sp_dc call behind it fails.
  */
+/**
+ * Whether a sync run produced nothing usable and should be marked FAILED:
+ * every step that actually RAN errored.
+ *
+ * [StepStatus.SKIPPED] steps are excluded from the vote. A step the user turned
+ * off (auto-mix discovery) is not evidence the sync worked — counting it would
+ * make "everything failed" unreachable, so a totally broken sync would report
+ * success purely because one step was disabled. A run of nothing but SKIPPED
+ * steps isn't a failure either: nothing was attempted.
+ */
+internal fun allAttemptedStepsFailed(diagnostics: List<SyncStepResult>): Boolean {
+    val attempted = diagnostics.filter { it.status != StepStatus.SKIPPED }
+    return attempted.isNotEmpty() && attempted.all { it.status == StepStatus.ERROR }
+}
+
 internal fun keepAsLibraryPlaylist(
     id: String,
     name: String,
@@ -253,9 +268,11 @@ class PlaylistFetchWorker @AssistedInject constructor(
             // Persist diagnostics.
             syncHistoryDao.updateDiagnostics(syncId, Json.encodeToString(diagnostics.toList()))
 
-            // If ALL diagnostics entries errored, the sync produced no data -- fail.
-            if (diagnostics.isNotEmpty() && diagnostics.all { it.status == StepStatus.ERROR }) {
-                val summary = diagnostics.joinToString("; ") { "${it.service}/${it.step}: ${it.errorMessage}" }
+            // If every step that RAN errored, the sync produced no data -- fail.
+            if (allAttemptedStepsFailed(diagnostics)) {
+                val summary = diagnostics
+                    .filter { it.status != StepStatus.SKIPPED }
+                    .joinToString("; ") { "${it.service}/${it.step}: ${it.errorMessage}" }
                 syncHistoryDao.updateStatus(
                     id = syncId,
                     status = SyncState.FAILED,
@@ -318,8 +335,21 @@ class PlaylistFetchWorker @AssistedInject constructor(
         // excludes exactly these instead of everything spotify owns (#354).
         val homeFeedMixIds = mutableSetOf<String>()
 
+        // Auto-mix discovery is opt-OUT (#335, #344). These are playlists the
+        // user never created or saved, so when someone turns them off we must
+        // not fetch them at all — skipping the call is also what makes their
+        // sync shorter, which was half the complaint. Anything already in the
+        // library stays put; the per-mix Home toggle in Manage Playlists still
+        // applies to those. Defaults to true — see SyncPreferencesManager.
+        val discoverMixes = runCatching {
+            syncPreferencesManager.discoverAutoMixes.first()
+        }.getOrDefault(true)
+
         // Fetch Daily Mixes (sp_dc dependent -- may return empty if GraphQL fails).
-        try {
+        if (!discoverMixes) {
+            Log.d(TAG, "fetchSpotifyPlaylists: auto-mix discovery disabled, skipping home feed")
+            diagnostics.add(SyncStepResult("SPOTIFY", "getDailyMixes", StepStatus.SKIPPED, 0))
+        } else try {
             when (val result = spotifyApiClient.getDailyMixes()) {
                 is SyncResult.Success -> {
                     val dailyMixes = result.data

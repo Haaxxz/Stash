@@ -88,6 +88,7 @@ class SyncPreferencesManager @Inject constructor(
         val YOUTUBE_SYNC_MODE = stringPreferencesKey("youtube_sync_mode")
         val YOUTUBE_LIKED_STUDIO_ONLY = booleanPreferencesKey("youtube_liked_studio_only")
         val SYNC_DAYS = intPreferencesKey("sync_days")
+        val DISCOVER_AUTO_MIXES = booleanPreferencesKey("discover_auto_mixes")
     }
 
     /** Reactive stream of the current [SyncPreferences]. */
@@ -124,6 +125,27 @@ class SyncPreferencesManager @Inject constructor(
      */
     val youtubeLikedStudioOnly: Flow<Boolean> =
         context.syncPrefsDataStore.data.map { it[Keys.YOUTUBE_LIKED_STUDIO_ONLY] ?: false }
+
+    /**
+     * Whether sync discovers the service's own algorithmic mixes — Spotify's
+     * home-feed Daily Mixes and friends. Read once per sync run in
+     * [com.stash.core.data.sync.workers.PlaylistFetchWorker].
+     *
+     * These are playlists the user never created or saved, so they read as
+     * "the app added playlists that aren't mine" (#335, #344) and they make
+     * every sync longer. Turning this off stops discovering them; mixes already
+     * in the library stay until removed, and can be hidden from Home
+     * individually in Manage Playlists.
+     *
+     * **Defaults to TRUE — deliberately opt-OUT, not opt-in.** The "Made for
+     * you" rail is a headline surface; defaulting this off would silently strip
+     * it from every existing library on upgrade, and leave a fresh install
+     * looking empty. The complaint was never "these exist", it was "I can't
+     * stop them" — so this gives the off switch rather than flipping the
+     * experience for everyone.
+     */
+    val discoverAutoMixes: Flow<Boolean> =
+        context.syncPrefsDataStore.data.map { it[Keys.DISCOVER_AUTO_MIXES] ?: true }
 
     /**
      * Reactive stream of the days-of-week bitmask. Read via .first() inside
@@ -201,6 +223,11 @@ class SyncPreferencesManager @Inject constructor(
     /** Persist the YT Music Liked Songs studio-only filter. */
     suspend fun setYoutubeLikedStudioOnly(enabled: Boolean) {
         context.syncPrefsDataStore.edit { it[Keys.YOUTUBE_LIKED_STUDIO_ONLY] = enabled }
+    }
+
+    /** Persist whether sync discovers the service's own algorithmic mixes. */
+    suspend fun setDiscoverAutoMixes(enabled: Boolean) {
+        context.syncPrefsDataStore.edit { it[Keys.DISCOVER_AUTO_MIXES] = enabled }
     }
 
     /** Persist the days-of-week bitmask. UI passes [DayOfWeekSet.bitmask]. */
