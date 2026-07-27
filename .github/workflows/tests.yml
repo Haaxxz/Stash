@@ -47,15 +47,32 @@ jobs:
       - name: Compile every module's unit tests
         run: ./gradlew compileDebugUnitTestKotlin --no-daemon
 
+  # Runs EVERY module's unit tests, not just :core:media.
+  #
+  # This job used to execute one module of fifteen — 345 of 1892 tests — so a
+  # break anywhere else (all of :core:data's DAO and sync-worker coverage
+  # included) reached a release unchallenged. It stayed that narrow because the
+  # rest of the suite was red: ~28 known failures nobody wanted to quarantine,
+  # plus a deadlocked :core:media test that hung the job until the 20-minute cap
+  # killed it, on every single push.
+  #
+  # Both are fixed (2026-07-25, e325103b + f03f46ba). The whole repo is green —
+  # 1892 tests, 15 modules — so there is nothing left to quarantine and no
+  # reason for the gate to keep ignoring 82% of it.
+  #
+  # `--continue` so one failing module still reports the others; without it the
+  # first failure masks everything behind it and you fix bugs one CI round-trip
+  # at a time.
   unit-tests:
     if: ${{ github.event_name != 'push' || !contains(github.event.head_commit.message, '[skip test]') }}
-    name: core:media unit tests
+    name: All module unit tests
     runs-on: ubuntu-latest
-    # The :core:media suite contains a known flaky network test that can
-    # HANG (no test-level timeout). Without a job cap each hung run squats
-    # on a concurrency slot for the 6h default — 20 pushes in a day froze
-    # the entire account's Actions queue (observed 2026-07-19, blocked the
-    # v0.9.78 release build). Bound the damage.
+    # Job cap retained. It was added when a hung :core:media squatted a
+    # concurrency slot for the 6h default — 20 pushes in a day froze the whole
+    # account's Actions queue and blocked the v0.9.78 release build
+    # (2026-07-19). The hang is fixed, but the cap is the thing that bounds the
+    # damage if another test ever wedges, so it stays. Full sweep runs in ~3-4
+    # min; 20 leaves generous headroom.
     timeout-minutes: 20
 
     steps:
@@ -74,17 +91,17 @@ jobs:
       - name: Fix gradlew permission
         run: chmod +x gradlew
 
-      - name: Run core:media unit tests
-        run: ./gradlew :core:media:testDebugUnitTest --no-daemon
+      - name: Run all unit tests
+        run: ./gradlew testDebugUnitTest --continue --no-daemon
 
-      - name: Upload test report
+      - name: Upload test reports
         if: always()
         uses: actions/upload-artifact@v6
         with:
-          name: core-media-test-results
+          name: unit-test-results
           path: |
-            core/media/build/test-results/testDebugUnitTest/
-            core/media/build/reports/tests/testDebugUnitTest/
+            **/build/test-results/testDebugUnitTest/
+            **/build/reports/tests/testDebugUnitTest/
 
   build-debug-apk:
     if: ${{ github.event_name != 'push' || !contains(github.event.head_commit.message, '[skip test]') }}
