@@ -32,6 +32,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.stash.core.common.extensions.pluralize
 
 /**
  * Lightweight model for the playlist picker. Keeps the UI component
@@ -132,7 +133,7 @@ fun SaveToPlaylistSheet(
                             color = MaterialTheme.colorScheme.onSurface,
                         )
                         Text(
-                            text = "${playlist.trackCount} tracks",
+                            text = pluralize(playlist.trackCount, "track"),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )

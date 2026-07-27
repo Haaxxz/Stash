@@ -57,6 +57,7 @@ import javax.inject.Inject
 import androidx.core.app.ServiceCompat
 import androidx.core.net.toUri
 import com.stash.core.data.db.entity.TrackEntity
+import com.stash.core.common.extensions.pluralize
 
 /**
  * Background playback service that hosts an [ExoPlayer] and exposes a [MediaSession]
@@ -1257,7 +1258,7 @@ class StashPlaybackService : MediaLibraryService() {
                                 .setMediaMetadata(
                                     MediaMetadata.Builder()
                                         .setTitle(playlist.name)
-                                        .setSubtitle("${playlist.trackCount} tracks")
+                                        .setSubtitle(pluralize(playlist.trackCount, "track"))
                                         .setArtworkUri(playlist.artUrl?.toUri())
                                         .setIsBrowsable(true)
                                         .setIsPlayable(false)

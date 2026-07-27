@@ -35,6 +35,7 @@ import androidx.compose.ui.unit.dp
 import com.stash.core.ui.components.GlassCard
 import com.stash.core.ui.theme.SpaceGrotesk
 import com.stash.core.ui.theme.StashTheme
+import com.stash.core.common.extensions.pluralize
 
 /**
  * View-layer row model used by [RecentSyncsCard]. Decouples the card from
@@ -148,7 +149,7 @@ private fun RecentSyncRowItem(row: RecentSyncRow) {
                     text = buildAnnotatedString {
                         withStyle(SpanStyle(color = success, fontWeight = FontWeight.Medium)) { append("+${row.added} ") }
                         withStyle(SpanStyle(color = dim)) { append(row.addedNoun) }
-                        if (row.playlists > 0) withStyle(SpanStyle(color = dim)) { append("  ·  ${row.playlists} playlists") }
+                        if (row.playlists > 0) withStyle(SpanStyle(color = dim)) { append("  ·  ${pluralize(row.playlists, "playlist")}") }
                         if (row.sizeLabel != null) withStyle(SpanStyle(color = dim)) { append("  ·  ${row.sizeLabel}") }
                     },
                 )

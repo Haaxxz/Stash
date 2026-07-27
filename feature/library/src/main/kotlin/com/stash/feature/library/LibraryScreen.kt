@@ -110,6 +110,7 @@ import com.stash.core.ui.selection.SelectionAction
 import com.stash.core.ui.selection.SelectionScaffoldOverlay
 import com.stash.core.ui.selection.SelectionState
 import com.stash.core.ui.theme.StashTheme
+import com.stash.core.common.extensions.pluralize
 
 /**
  * Library screen entry point. Injects the [LibraryViewModel] via Hilt
@@ -1141,7 +1142,7 @@ private fun PlaylistsGrid(
                             ) {
                                 SourceIndicator(source = playlist.source)
                                 Text(
-                                    text = "${playlist.trackCount} tracks",
+                                    text = pluralize(playlist.trackCount, "track"),
                                     style = MaterialTheme.typography.bodySmall,
                                     color = Color.White.copy(alpha = 0.8f),
                                 )
@@ -1183,7 +1184,7 @@ private fun PlaylistsGrid(
                             ) {
                                 SourceIndicator(source = playlist.source)
                                 Text(
-                                    text = "${playlist.trackCount} tracks",
+                                    text = pluralize(playlist.trackCount, "track"),
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
@@ -1219,7 +1220,7 @@ private fun PlaylistsGrid(
                     overflow = TextOverflow.Ellipsis,
                 )
                 Text(
-                    text = "${playlist.trackCount} tracks",
+                    text = pluralize(playlist.trackCount, "track"),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -1649,7 +1650,7 @@ private fun ArtistsGrid(
                         textAlign = TextAlign.Center,
                     )
                     Text(
-                        text = "${artist.trackCount} tracks",
+                        text = pluralize(artist.trackCount, "track"),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -1719,7 +1720,7 @@ private fun ArtistsGrid(
                     overflow = TextOverflow.Ellipsis,
                 )
                 Text(
-                    text = "${artist.trackCount} tracks",
+                    text = pluralize(artist.trackCount, "track"),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )

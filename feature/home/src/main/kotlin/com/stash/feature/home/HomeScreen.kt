@@ -134,6 +134,7 @@ import com.stash.core.ui.components.streaming.StreamingModeSheet
 import androidx.compose.ui.layout.ContentScale
 import coil3.compose.AsyncImage
 import com.stash.core.ui.theme.StashTheme
+import com.stash.core.common.extensions.pluralize
 
 /**
  * Home screen composable displaying a premium dark dashboard with sync
@@ -387,7 +388,7 @@ fun HomeScreen(
                                     subtitle = when (m.buildState) {
                                         MixBuildState.BUILDING -> "building…"
                                         MixBuildState.EMPTY -> "empty — edit to fill"
-                                        else -> "${m.trackCount} tracks"
+                                        else -> pluralize(m.trackCount, "track")
                                     },
                                     artUrl = m.artUrl,
                                     onPlay = { viewModel.playMix(m.id) },
@@ -1024,7 +1025,7 @@ private fun DiscoveryPlaylistRow(
                     title = playlist.title,
                     // Curator is always the regional Qobuz account ("Qobuz France")
                     // — redundant on every card, so show the track count instead.
-                    artist = "${playlist.trackCount} tracks",
+                    artist = pluralize(playlist.trackCount, "track"),
                     thumbnailUrl = playlist.thumbnailUrl,
                     year = null,
                     isLossless = true,

@@ -40,6 +40,7 @@ import com.stash.core.ui.components.VerticalScrollbar
 import com.stash.data.ytmusic.model.AlbumSource
 import com.stash.data.ytmusic.model.AlbumSummary
 import com.stash.data.ytmusic.model.PlaylistSummary
+import com.stash.core.common.extensions.pluralize
 
 /**
  * "See all" browse of the Qobuz editorial playlist catalog — a paginated
@@ -125,7 +126,7 @@ fun PlaylistBrowseScreen(
                         Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
                             AlbumSquareCard(
                                 title = playlist.title,
-                                artist = "${playlist.trackCount} tracks",   // curator is always "Qobuz" — show count instead
+                                artist = pluralize(playlist.trackCount, "track"),   // curator is always "Qobuz" — show count instead
                                 thumbnailUrl = playlist.thumbnailUrl,
                                 year = null,
                                 isLossless = true,
