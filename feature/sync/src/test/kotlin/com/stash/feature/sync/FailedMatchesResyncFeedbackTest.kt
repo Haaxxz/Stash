@@ -128,6 +128,42 @@ class FailedMatchesResyncFeedbackTest {
         )
     }
 
+    /**
+     * #372 — "the Preview button is not working, and is kinda static". Preview
+     * failures were caught and only `Log.e`'d, so a failing extraction was
+     * indistinguishable from a dead button. Same shape as #143 above: if the
+     * user can't see that it ran, it didn't.
+     */
+    @Test fun `a failed preview tells the user instead of silently doing nothing`() = runTest {
+        coEvery { previewUrlExtractor.extractStreamUrl(any(), any()) } throws
+            IllegalStateException("no stream")
+        val vm = makeVm()
+        val messages = mutableListOf<String>()
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.uiState.collect {} }
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.userMessages.collect { messages.add(it) } }
+
+        vm.previewRejectedMatch("vid1")
+        advanceUntilIdle()
+
+        assertTrue(
+            "a failed preview must surface a message, got $messages",
+            messages.any { it.contains("preview", ignoreCase = true) },
+        )
+    }
+
+    /** The loading flag must clear on failure too, or the row spins forever. */
+    @Test fun `a failed preview clears the loading state`() = runTest {
+        coEvery { previewUrlExtractor.extractStreamUrl(any(), any()) } throws
+            IllegalStateException("no stream")
+        val vm = makeVm()
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.uiState.collect {} }
+
+        vm.previewRejectedMatch("vid1")
+        advanceUntilIdle()
+
+        assertEquals(null, vm.uiState.value.previewLoading)
+    }
+
     @Test fun `resync derives query from artist and title when the stored search query is blank`() = runTest {
         // Real bug: auto-requeued tracks (TrackDownloadWorker) get an empty
         // download_queue.search_query. Resync trusted that blank string and

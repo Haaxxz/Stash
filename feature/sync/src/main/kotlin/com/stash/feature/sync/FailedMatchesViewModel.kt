@@ -19,6 +19,7 @@ import com.stash.data.download.prefs.QualityPreferencesManager
 import com.stash.data.download.prefs.toYtDlpArgs
 import com.stash.data.download.preview.PreviewUrlExtractor
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -330,8 +331,7 @@ class FailedMatchesViewModel @Inject constructor(
      * [previewUrlCache] and served instantly when the user taps preview.
      */
     private fun preExtractStreamUrls(candidates: Map<Long, ResyncCandidate>) {
-        preExtractJobs.forEach { it.cancel() }
-        preExtractJobs.clear()
+        cancelPreExtraction()
         previewUrlCache.clear()
 
         val semaphore = Semaphore(PRE_EXTRACT_CONCURRENCY)
@@ -342,6 +342,10 @@ class FailedMatchesViewModel @Inject constructor(
                     val url = previewUrlExtractor.extractStreamUrl(candidate.videoId)
                     previewUrlCache[candidate.videoId] = url
                     Log.d(TAG, "Pre-extracted preview URL for ${candidate.videoId}")
+                } catch (e: CancellationException) {
+                    // Expected: a user tap cancels this prefetch to take the
+                    // extractor permit. Not a failure — don't log it as one.
+                    throw e
                 } catch (e: Exception) {
                     Log.w(TAG, "Pre-extract failed for ${candidate.videoId}: ${e.message}")
                 } finally {
@@ -567,16 +571,44 @@ class FailedMatchesViewModel @Inject constructor(
             _previewLoading.value = videoId
             try {
                 // Check cache first — if pre-extraction finished, this is instant
-                val url = previewUrlCache[videoId]
-                    ?: previewUrlExtractor.extractStreamUrl(videoId).also {
+                val cached = previewUrlCache[videoId]
+                val url = if (cached != null) {
+                    cached
+                } else {
+                    // #372: a cache miss has to extract NOW, and the extractor's
+                    // yt-dlp/InnerTube semaphores are shared process-wide with the
+                    // background pre-extraction kicked off after every resync (up
+                    // to PRE_EXTRACT_LIMIT jobs). Without this the user's tap
+                    // queues behind that batch and the button just sits there for
+                    // many seconds — reported as "preview not working, kinda
+                    // static". A live tap outranks speculative prefetch, so drop
+                    // the background work and take the permit.
+                    cancelPreExtraction()
+                    previewUrlExtractor.extractStreamUrl(videoId).also {
                         previewUrlCache[videoId] = it
                     }
+                }
                 previewPlayer.playUrl(videoId, url)
+            } catch (e: CancellationException) {
+                throw e // never report our own cancellation as a preview failure
             } catch (e: Exception) {
+                // #372: this used to only Log.e, so every failure looked exactly
+                // like a dead button. Tell the user the preview failed.
                 Log.e(TAG, "Preview failed for videoId=$videoId", e)
+                _userMessages.tryEmit("Couldn't load that preview. Try again, or approve to hear the full track.")
             }
             _previewLoading.value = null
         }
+    }
+
+    /**
+     * Drops the speculative post-resync prefetch. Safe to call any time: the
+     * cache keeps whatever already finished, and anything cancelled is simply
+     * re-extracted on demand.
+     */
+    private fun cancelPreExtraction() {
+        preExtractJobs.forEach { it.cancel() }
+        preExtractJobs.clear()
     }
 
     /** Stops the current audio preview, if any. */
