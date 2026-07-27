@@ -305,11 +305,60 @@ class DownloadQueueDaoPartitionTest {
      * (track, type) so a single track can sit in several playlists at once
      * (e.g. both a Stash Mix and Liked Songs) for the overlap tests.
      */
+    // ---- cancelDownloadsWithNoEnabledPlaylist: soft-removed memberships ----
+    //
+    // #368 ("toggled it off, still downloads thousands I don't need"). The
+    // sweep preserves any track that still belongs to a sync-enabled, active
+    // playlist. Membership removal is SOFT (playlist_tracks.removed_at), and
+    // the preserve-subquery forgot to filter it — unlike its sibling
+    // getAllPendingBySources, which checks `pt.removed_at IS NULL`. So a track
+    // dropped from the only enabled playlist that referenced it still counted
+    // as "wanted" and kept its queued download.
+
+    @Test fun `cancel sweep drops a queue row whose only enabled membership was removed`() = runTest {
+        seedTrack(trackId = 1L)
+        addPlaylistMembership(
+            trackId = 1L, type = PlaylistType.CUSTOM, syncEnabled = true, removed = true,
+        )
+        dao.insert(pendingRow(id = 100L, trackId = 1L, syncId = 5L))
+
+        val cancelled = dao.cancelDownloadsWithNoEnabledPlaylist()
+
+        assertEquals("a soft-removed membership must not keep the download alive", 1, cancelled)
+    }
+
+    @Test fun `cancel sweep spares a queue row with a live enabled membership`() = runTest {
+        // Control for the above: the sweep must not become over-eager.
+        seedTrack(trackId = 1L)
+        addPlaylistMembership(trackId = 1L, type = PlaylistType.CUSTOM, syncEnabled = true)
+        dao.insert(pendingRow(id = 100L, trackId = 1L, syncId = 5L))
+
+        val cancelled = dao.cancelDownloadsWithNoEnabledPlaylist()
+
+        assertEquals("a live membership must keep its queued download", 0, cancelled)
+    }
+
+    @Test fun `cancel sweep spares a track still live in a second enabled playlist`() = runTest {
+        // Removed from one enabled playlist, still in another — the case the
+        // NOT IN was written for. Must survive.
+        seedTrack(trackId = 1L)
+        addPlaylistMembership(
+            trackId = 1L, type = PlaylistType.CUSTOM, syncEnabled = true, removed = true,
+        )
+        addPlaylistMembership(trackId = 1L, type = PlaylistType.LIKED_SONGS, syncEnabled = true)
+        dao.insert(pendingRow(id = 100L, trackId = 1L, syncId = 5L))
+
+        val cancelled = dao.cancelDownloadsWithNoEnabledPlaylist()
+
+        assertEquals("still wanted via Liked Songs — must not be cancelled", 0, cancelled)
+    }
+
     private suspend fun addPlaylistMembership(
         trackId: Long,
         type: PlaylistType,
         syncEnabled: Boolean,
         isActive: Boolean = true,
+        removed: Boolean = false,
     ) {
         val playlistId = playlistDao.insert(
             PlaylistEntity(
@@ -328,6 +377,7 @@ class DownloadQueueDaoPartitionTest {
                 trackId = trackId,
                 position = 0,
                 addedAt = Instant.EPOCH,
+                removedAt = if (removed) Instant.EPOCH else null,
             )
         )
     }

@@ -397,6 +397,14 @@ interface DownloadQueueDao {
      * source) are preserved. `is_active = 1` excludes archived
      * playlists from the membership check.
      *
+     * `removed_at IS NULL` matters as much as the other two: membership
+     * removal is SOFT, so without it a track dropped from the only enabled
+     * playlist that referenced it still counts as "wanted" and keeps its
+     * queued download forever — downloads the user never asked for and
+     * can't stop by deselecting (#368). The sibling
+     * [getAllPendingBySources] has always filtered it; this query was
+     * simply missing it.
+     *
      * Returns the number of queue rows deleted.
      */
     @Query(
@@ -407,7 +415,9 @@ interface DownloadQueueDao {
             SELECT DISTINCT pt.track_id
             FROM playlist_tracks pt
             INNER JOIN playlists p ON p.id = pt.playlist_id
-            WHERE p.sync_enabled = 1 AND p.is_active = 1
+            WHERE p.sync_enabled = 1
+              AND p.is_active = 1
+              AND pt.removed_at IS NULL
           )
         """
     )
