@@ -24,6 +24,13 @@ import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 
 /**
+ * The 16-byte header every SQLite database file begins with: the ASCII string
+ * "SQLite format 3" followed by a NUL terminator. Built rather than written as a
+ * literal so the source file stays free of raw NUL bytes.
+ */
+private val SQLITE_MAGIC: ByteArray = "SQLite format 3".toByteArray(Charsets.US_ASCII) + 0
+
+/**
  * Handles exporting and importing the internal Room database, DataStore settings,
  * and encrypted tokens. Bundles everything into a single ZIP archive.
  *
@@ -101,14 +108,48 @@ class DatabaseBackupManager @Inject constructor(
     }
 
     /**
-     * Opens [file] read-only as a SQLite database and runs `PRAGMA
-     * integrity_check`, throwing if it is not a valid, intact database. This is
-     * the gate that keeps a truncated/corrupt backup from ever replacing the
-     * live library. Internal for testing.
+     * Opens [file] as a SQLite database and runs `PRAGMA integrity_check`,
+     * throwing if it is not a valid, intact database. This is the gate that
+     * keeps a truncated/corrupt backup from ever replacing the live library.
+     * Internal for testing.
+     *
+     * Opened **READ-WRITE on purpose** — do not "tighten" this back to
+     * `OPEN_READONLY`. A real backup contains `tracks_fts` (FTS4), and on an FTS
+     * table `integrity_check` dispatches the FTS module's own check as
+     * `INSERT INTO tracks_fts(tracks_fts) VALUES('integrity-check')`. That is
+     * write-shaped even though it persists nothing, so a read-only handle throws
+     * "attempt to write a readonly database" and EVERY import fails the gate,
+     * valid backups included (#370, shipped broken in v0.9.83).
+     *
+     * This is safe: [file] is always the throwaway `.import-tmp` staged copy,
+     * never the live database — it is moved into place or deleted immediately
+     * after. A genuinely corrupt backup still fails the check and is rejected.
+     *
+     * Note no unit test can guard this: Robolectric does not enforce
+     * `OPEN_READONLY` (verified 2026-07-26 — a READONLY handle accepts INSERT
+     * there), so the read-only failure is only reproducible on a device.
      */
     internal fun verifyDatabaseIntegrity(file: File) {
+        // Structural gate FIRST, before SQLite sees the file. Every SQLite
+        // database begins with the 16-byte magic "SQLite format 3"; a
+        // truncated download or a wrong file picked in the chooser does not.
+        //
+        // This is not belt-and-braces. Opening READ-WRITE (required above) means
+        // we can no longer lean on the opener to reject a malformed file the way
+        // a read-only open did — the platform is free to treat a writable handle
+        // to a junk path as "create/repair", and Robolectric demonstrably does:
+        // after the READWRITE change the existing corrupt-backup test stopped
+        // throwing entirely. Checking the header ourselves makes rejection
+        // deterministic and independent of any SQLite/host quirk, which is what
+        // a gate protecting someone's only library should be.
+        val header = ByteArray(SQLITE_MAGIC.size)
+        val read = file.inputStream().use { it.read(header) }
+        if (read != header.size || !header.contentEquals(SQLITE_MAGIC)) {
+            throw IllegalStateException("The backup database is corrupt and was not restored.")
+        }
+
         val db = android.database.sqlite.SQLiteDatabase.openDatabase(
-            file.path, null, android.database.sqlite.SQLiteDatabase.OPEN_READONLY,
+            file.path, null, android.database.sqlite.SQLiteDatabase.OPEN_READWRITE,
         )
         db.use {
             val ok = it.rawQuery("PRAGMA integrity_check", null).use { cursor ->
