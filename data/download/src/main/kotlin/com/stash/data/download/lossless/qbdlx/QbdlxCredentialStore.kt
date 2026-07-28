@@ -13,6 +13,7 @@ import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.flow.first
+import android.util.Log
 
 /** One anonymized pool token for the Settings picker. `token` is the id only, never shown. */
 data class QbdlxTokenChoice(
@@ -119,10 +120,23 @@ class QbdlxCredentialStore @Inject constructor(
         if (lastRefreshAttempt != 0L && now - lastRefreshAttempt < REFRESH_MIN_INTERVAL_MS) return
         lastRefreshAttempt = now
 
+        // Instrumented deliberately, at Info so it survives a release build.
+        // Every previous credential bug here was diagnosed by logging the actual
+        // decision rather than reasoning about it, and a silent self-healing path
+        // is impossible to confirm from the outside.
+        val before = pool().size
         val fetched = remotePool.fetch()?.trim().orEmpty()
-        if (fetched.isEmpty() || fetched == poolRaw) return
+        if (fetched.isEmpty()) {
+            Log.i(TAG, "pool exhausted ($before token(s)); refresh returned nothing")
+            return
+        }
+        if (fetched == poolRaw) {
+            Log.i(TAG, "pool exhausted ($before token(s)); refresh returned the same pool")
+            return
+        }
 
         poolRaw = fetched
+        Log.i(TAG, "pool refreshed: $before -> ${pool().size} token(s)")
         // A fresh pool deserves a clean slate: dead flags describe the OLD tokens,
         // and a re-added token should not inherit a cooldown from its last life.
         deadUntil.clear()
@@ -300,6 +314,8 @@ class QbdlxCredentialStore @Inject constructor(
     }
 
     companion object {
+        private const val TAG = "QbdlxPool"
+
         const val MAX_REGION_TRIES = 3
 
         // Dead-token cooldown before a token is retried (circuit-breaker style).
