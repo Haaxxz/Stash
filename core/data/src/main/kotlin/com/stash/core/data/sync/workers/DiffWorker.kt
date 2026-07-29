@@ -50,6 +50,10 @@ internal fun defaultSyncEnabled(type: PlaylistType, online: Boolean): Boolean =
  * surface-only (stream-on-tap), so an auto-enabled mix never pulls bytes even
  * after the user switches to Offline and re-syncs.
  */
+// STASH_MIX is deliberately absent from this exclusion: a locally-generated mix
+// never arrives as a remote playlist snapshot, so it cannot reach this guard, and
+// ShouldEnqueueForDownloadTest pins that on purpose. Stash mixes are kept
+// download-ineligible where they ARE reachable — the DownloadQueueDao predicates.
 internal fun shouldEnqueueForDownload(type: PlaylistType, streamingMode: Boolean): Boolean =
     !streamingMode && type != PlaylistType.DAILY_MIX
 
@@ -562,7 +566,13 @@ class DiffWorker @AssistedInject constructor(
             addCrossRefIfNotSoftDeleted(localPlaylist.id, trackId, snapshot.position, existingCrossRefs, crossRefsToInsert)
         }
 
-        if (!streamingMode) {
+        // Mixes are surface-only: they stream on tap and must never pull bytes.
+        // shouldEnqueueForDownload has encoded that since it was written, and was
+        // unit-tested — but this site tested raw `!streamingMode`, so the guard
+        // was never consulted and every track of every rotating mix was queued in
+        // Offline mode (#368: "it downloads 6000+ from users playlists and
+        // Spotify mixes that I don't need").
+        if (shouldEnqueueForDownload(localPlaylist.type, streamingMode)) {
             for (batchTrack in newTracks) {
                 val trackId = checkNotNull(batchTrack.persistedId)
                 downloadEntries.add(
