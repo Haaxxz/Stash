@@ -33,15 +33,24 @@ import dagger.assisted.AssistedInject
 import kotlinx.coroutines.flow.first
 
 /**
- * A newly-discovered playlist's initial [PlaylistEntity.syncEnabled].
- * Algorithmic mixes (DAILY_MIX) auto-enable in Online mode so they surface
- * immediately with no download. Everything else — and every playlist in
- * Offline mode — stays opt-in: the first Sync Now is a discovery pass that
- * downloads nothing unasked. [online] is the streaming-mode flag (on = stream,
- * don't download).
+ * A newly-discovered playlist's initial [PlaylistEntity.syncEnabled]: always
+ * opt-in. The first Sync Now is a discovery pass that downloads nothing unasked.
+ *
+ * DAILY_MIX used to auto-enable in Online mode "so they surface immediately with
+ * no download". That was redundant and load-bearing only for harm:
+ * [com.stash.core.data.db.dao.PlaylistDao.getAllVisible] already surfaces a
+ * `sync_enabled = 0` playlist whose tracks are streamable when
+ * `includeStreamable = true` (pinned by PlaylistDaoMixVisibilityTest), so mixes
+ * still appear on Home in Online mode without it. The flag's only other effects
+ * were making the mix download-eligible and making the orphan sweep spare its
+ * tracks — and because mixes rotate, every new one pulled a fresh batch of
+ * downloads the user never asked for (#368).
+ *
+ * Parameters are retained to document what was considered and to keep the
+ * decision testable.
  */
-internal fun defaultSyncEnabled(type: PlaylistType, online: Boolean): Boolean =
-    type == PlaylistType.DAILY_MIX && online
+@Suppress("UNUSED_PARAMETER")
+internal fun defaultSyncEnabled(type: PlaylistType, online: Boolean): Boolean = false
 
 /**
  * Whether a playlist's tracks should be enqueued for download during this sync.
