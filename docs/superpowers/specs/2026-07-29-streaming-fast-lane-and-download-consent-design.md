@@ -85,6 +85,45 @@ to today.
    `--remote-components ejs:github` fetch, and cold-start work is a worthwhile
    follow-up rather than something this change subsumes.
 
+### Measured on device 2026-07-29 — the premise was wrong, usefully
+
+Everything above assumed the win was "call InnerTube's ANDROID_VR instead of
+spawning Python for the same URL". Measurement said otherwise. Recorded here
+because the wrong hypothesis is what led to the instrument that found the real
+cause.
+
+| path | outcome | time |
+|---|---|---|
+| InnerTube, any variant (our own request) | returns a URL, but PO-token-gated: 403 past the head. `AudioUrlTailProbe` rejects it | ~800 ms, wasted |
+| yt-dlp `ios` | no usable URLs — YouTube's SABR-only experiment (yt-dlp #12482) | ~2.8 s, wasted |
+| yt-dlp `android_vr` | **works**, after two fixes below | **~2.7 s** |
+| yt-dlp default client | works, itag 251 opus audio-only | ~12-13 s |
+
+**The actual cause of the slowness had nothing to do with InnerTube.** The June
+`android_vr` fast path was dead, from one unread line of yt-dlp stderr:
+`Skipping client "android_vr" since it does not support cookies`. yt-dlp answers
+`--cookies` + a cookie-incompatible client by discarding the *client*. Every
+extraction paid ~3.5 s being refused, then ~11.6 s on the default path — ~15 s.
+
+Fixing that revealed a second layer: `android_vr` no longer advertises itag
+251/250, so the June selector failed the attempt outright. With audio-only itags
+preferred and `best` as last resort it succeeds in ~2.7 s (three consecutive
+tracks: 2.74, 2.71, 2.75), serving itag 18 — combined 360p, ~96k AAC — versus
+160k opus from the slow path. Playback verified healthy 85 s in
+(`position=84760, error=null`), proving the URL is not range-gated.
+
+**Conclusions for the record:**
+
+- The 2026-06-08 finding still holds. InnerTube URLs remain PO-token-gated, and
+  the probe caught it live (`tail probe rejected a gated URL: code=403`, plus a
+  `0-byte body` 403 from googlevideo with `c=IOS`). So the probe was not
+  belt-and-braces — it is the only reason racing InnerTube is safe at all.
+- The race itself is retained: it costs ~800 ms when InnerTube loses and would
+  pay off immediately if the gating ever lifts, which the probe now detects
+  automatically instead of requiring another on-device investigation.
+- Unrelated but surfaced: `qbdlx api call failed status=403 USER_BLOCKED` — a
+  pool token is blocked, not merely expired.
+
 ### Existing safety nets preserved
 
 `RefreshingDataSourceFactory` re-resolves through the registry on a mid-stream
