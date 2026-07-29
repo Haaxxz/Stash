@@ -423,6 +423,12 @@ interface DownloadQueueDao {
         """
         DELETE FROM download_queue
         WHERE status = 'PENDING'
+          -- Sync partition only. A NULL sync_id is a user's explicit "download
+          -- this" tap, which is the strongest statement of intent there is — this
+          -- sweep drains phantom rows a SYNC created, never a request the user
+          -- made. Without this, tapping Download on a track that lives only in a
+          -- mix silently produced nothing.
+          AND sync_id IS NOT NULL
           AND track_id NOT IN (
             SELECT DISTINCT pt.track_id
             FROM playlist_tracks pt
@@ -613,6 +619,10 @@ interface DownloadQueueDao {
     @Query("""
         DELETE FROM download_queue
         WHERE status IN ('PENDING', 'FAILED', 'WAITING_FOR_LOSSLESS')
+          -- Sync partition only — see cancelDownloadsWithNoEnabledPlaylist. A
+          -- manual (sync_id NULL) row is a download the user asked for; sweeping
+          -- it is how search-tab downloads went missing on relaunch.
+          AND sync_id IS NOT NULL
           AND track_id NOT IN (
               SELECT pt.track_id FROM playlist_tracks pt
               INNER JOIN playlists p ON p.id = pt.playlist_id

@@ -4,6 +4,7 @@ import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import com.stash.core.data.db.StashDatabase
 import com.stash.core.data.db.entity.DownloadQueueEntity
+import com.stash.core.data.db.entity.SyncHistoryEntity
 import com.stash.core.data.db.entity.TrackEntity
 import com.stash.core.model.DownloadStatus
 import kotlinx.coroutines.flow.first
@@ -47,6 +48,11 @@ class DownloadQueueDaoDeferredTest {
         trackDao.insert(track(id = 1L))
         trackDao.insert(track(id = 2L))
         trackDao.insert(track(id = 3L))
+        // These fixtures are SYNC-created rows (sync_id set). The orphan sweeps
+        // only touch that partition — a manual sync_id NULL row is a download the
+        // user explicitly asked for and is spared. These tests are about status
+        // coverage (WAITING_FOR_LOSSLESS joining the sweep), not partitions.
+        db.syncHistoryDao().insert(SyncHistoryEntity(id = 1L))
     }
 
     @After
@@ -84,6 +90,7 @@ class DownloadQueueDaoDeferredTest {
 
     private fun entry(trackId: Long, status: DownloadStatus) = DownloadQueueEntity(
         trackId = trackId,
+        syncId = 1L,
         status = status,
         searchQuery = "test query",
     )

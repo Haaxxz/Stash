@@ -7,6 +7,7 @@ import com.stash.core.data.db.StashDatabase
 import com.stash.core.data.db.entity.DownloadQueueEntity
 import com.stash.core.data.db.entity.PlaylistEntity
 import com.stash.core.data.db.entity.PlaylistTrackCrossRef
+import com.stash.core.data.db.entity.SyncHistoryEntity
 import com.stash.core.data.db.entity.TrackEntity
 import com.stash.core.model.DownloadStatus
 import com.stash.core.model.MusicSource
@@ -48,6 +49,7 @@ class DownloadQueueDaoMixExclusionTest {
     private var customQueued = 0L
     private var dailyMixUnqueued = 0L
     private var customUnqueued = 0L
+    private var dailyMixManual = 0L
 
     @Before fun setUp() = runTest {
         db = Room.inMemoryDatabaseBuilder(
@@ -66,11 +68,17 @@ class DownloadQueueDaoMixExclusionTest {
         val stashMix = newPlaylist("Deep Cuts", "stash_mix_1", PlaylistType.STASH_MIX)
         val custom = newPlaylist("My Playlist", "spotify:playlist:mine", PlaylistType.CUSTOM)
 
-        dailyMixQueued = newTrack("A", dailyMix, queued = true)
-        stashMixQueued = newTrack("B", stashMix, queued = true)
-        customQueued = newTrack("C", custom, queued = true)
+        // Sync-created queue rows carry a sync_id — these are the phantom rows
+        // the sweeps exist to drain.
+        db.syncHistoryDao().insert(SyncHistoryEntity(id = 5L))
+        dailyMixQueued = newTrack("A", dailyMix, queued = true, syncId = 5L)
+        stashMixQueued = newTrack("B", stashMix, queued = true, syncId = 5L)
+        customQueued = newTrack("C", custom, queued = true, syncId = 5L)
         dailyMixUnqueued = newTrack("D", dailyMix, queued = false)
         customUnqueued = newTrack("E", custom, queued = false)
+        // A user's explicit Download tap on a mix-only track: manual partition
+        // (sync_id NULL), no eligible parent playlist.
+        dailyMixManual = newTrack("F", dailyMix, queued = true, syncId = null)
     }
 
     @After fun tearDown() { db.close() }
@@ -97,6 +105,23 @@ class DownloadQueueDaoMixExclusionTest {
         assertThat(dao.getByTrackId(customQueued)).isNotNull()
     }
 
+    /**
+     * The other half of "only download what the user wants": a Download tap is
+     * the strongest signal of intent there is, so neither sweep may evict it.
+     * Manual rows live in the sync_id NULL partition; the sweeps exist to drain
+     * phantom rows that a *sync* created, not a user's explicit request. Without
+     * this, tapping Download on a track that lives only in a mix silently
+     * produced nothing — the same class as the search-tab downloads that vanish
+     * on relaunch.
+     */
+    @Test fun `neither sweep evicts a manually requested download`() = runTest {
+        dao.deleteOrphanedQueueEntries()
+        assertThat(dao.getByTrackId(dailyMixManual)).isNotNull()
+
+        dao.cancelDownloadsWithNoEnabledPlaylist()
+        assertThat(dao.getByTrackId(dailyMixManual)).isNotNull()
+    }
+
     private suspend fun newPlaylist(name: String, sourceId: String, type: PlaylistType): Long =
         playlistDao.insert(
             PlaylistEntity(
@@ -109,7 +134,12 @@ class DownloadQueueDaoMixExclusionTest {
             )
         )
 
-    private suspend fun newTrack(tag: String, playlistId: Long, queued: Boolean): Long {
+    private suspend fun newTrack(
+        tag: String,
+        playlistId: Long,
+        queued: Boolean,
+        syncId: Long? = null,
+    ): Long {
         val trackId = trackDao.insert(
             TrackEntity(
                 title = "Track $tag",
@@ -133,7 +163,7 @@ class DownloadQueueDaoMixExclusionTest {
             dao.insert(
                 DownloadQueueEntity(
                     trackId = trackId,
-                    syncId = null,
+                    syncId = syncId,
                     status = DownloadStatus.PENDING,
                     searchQuery = "Artist $tag - Track $tag",
                 )
