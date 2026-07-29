@@ -2,6 +2,7 @@ package com.stash.data.download.files
 
 import android.util.Log
 import com.stash.core.data.db.dao.TrackDao
+import com.stash.core.media.streaming.StreamUrlCache
 import com.stash.data.download.DownloadExecutor
 import com.stash.data.download.DownloadResult
 import com.stash.data.download.prefs.QualityPreferencesManager
@@ -59,6 +60,7 @@ class SwapCoordinator @Inject constructor(
     private val trackDao: TrackDao,
     private val blocklistGuard: com.stash.core.data.blocklist.BlocklistGuard,
     private val localFileOps: com.stash.core.data.files.LocalFileOps,
+    private val streamUrlCache: StreamUrlCache,
 ) {
     companion object {
         private const val TAG = "SwapCoordinator"
@@ -145,8 +147,14 @@ class SwapCoordinator @Inject constructor(
                     Log.w(TAG, "swap: discarded too-small download for trackId=$trackId: ${committed.filePath}")
                     reFlagAfterFailure(trackId)
                 } else {
+                    } else {
                     trackDao.updateYoutubeId(trackId, newVideoId)
                     trackDao.markAsDownloaded(trackId, committed.filePath, committed.sizeBytes)
+                    // The cached StreamUrl was resolved against the OLD
+                    // youtubeId — without evicting it, buildMediaItemForTrack
+                    // keeps serving the stale (possibly-expired, definitely
+                    // wrong-song) URL after a swap.
+                    streamUrlCache.invalidate(trackId)
 
                     // Only now is it safe to remove the old file — and only if it
                     // isn't the very path we just wrote (same artist/title can
