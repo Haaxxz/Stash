@@ -147,7 +147,6 @@ class SwapCoordinator @Inject constructor(
                     Log.w(TAG, "swap: discarded too-small download for trackId=$trackId: ${committed.filePath}")
                     reFlagAfterFailure(trackId)
                 } else {
-                    } else {
                     trackDao.updateYoutubeId(trackId, newVideoId)
                     trackDao.markAsDownloaded(trackId, committed.filePath, committed.sizeBytes)
                     // The cached StreamUrl was resolved against the OLD
