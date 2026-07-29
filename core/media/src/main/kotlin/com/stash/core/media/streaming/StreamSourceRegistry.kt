@@ -159,6 +159,22 @@ class StreamSourceRegistry @Inject constructor(
                 if (allowYouTube) add("youtube" to { t: TrackEntity -> youtube.resolve(t, allowYtDlp) })
             }
         }
+        // Which sources are actually IN PLAY for this resolve, and why.
+        //
+        // Added after a "works in debug, dead in release" hunt where qbdlx never
+        // appeared in the logs at all and there was no way to tell whether it had
+        // been tried and failed, or silently excluded before it ever ran. The two
+        // gates that can drop a source here are invisible from the outside:
+        // `allowYtDlp` (false for speculative background fill) and the
+        // compile-time BuildConfig flags. Info level so a release build says so.
+        Log.i(
+            TAG,
+            "chain for ${track.id}: [${resolvers.joinToString(",") { it.first }}] " +
+                "allowYouTube=$allowYouTube allowYtDlp=$allowYtDlp " +
+                "qbdlxConfigured=${BuildConfig.QBDLX_CONFIGURED} " +
+                "arcodConfigured=${BuildConfig.ARCOD_CONFIGURED}",
+        )
+
         for ((name, fn) in resolvers) {
             val result = runCatching { fn(track) }
                 .onFailure { e ->
