@@ -78,6 +78,7 @@ class PreviewUrlExtractor @Inject constructor(
     private val ytDlpManager: YtDlpManager,
     private val tokenManager: TokenManager,
     private val innerTubeClient: InnerTubeClient,
+    private val tailProbe: AudioUrlTailProbe,
 ) {
     /** Test-only injection point for race logic. Not wired in production. */
     internal interface TestHooks {
@@ -140,7 +141,15 @@ class PreviewUrlExtractor @Inject constructor(
          * Only formats with a direct `url` (not signatureCipher) are
          * considered; ciphered formats are skipped.
          */
-        internal fun selectBestAudioUrl(formats: List<JsonObject>): String? {
+        internal fun selectBestAudioUrl(formats: List<JsonObject>): String? =
+            selectBestAudioFormat(formats)?.get("url")?.jsonPrimitive?.content
+
+        /**
+         * Format-returning form of [selectBestAudioUrl]. Playback needs the whole
+         * format object, not just its `url`, so the caller can read
+         * `contentLength` and tail-probe it — see [AudioUrlTailProbe].
+         */
+        internal fun selectBestAudioFormat(formats: List<JsonObject>): JsonObject? {
             val audio = formats.filter { f ->
                 (f["mimeType"]?.jsonPrimitive?.content ?: "").startsWith("audio/") && f["url"] != null
             }
@@ -152,7 +161,7 @@ class PreviewUrlExtractor @Inject constructor(
                 val mime = best["mimeType"]?.jsonPrimitive?.content
                 Log.d(TAG, "InnerTube selected mime=$mime bitrate=${bitrate(best)} opusPreferred=${opusBest != null}")
             }
-            return best?.get("url")?.jsonPrimitive?.content
+            return best
         }
 
         /**
@@ -460,9 +469,20 @@ class PreviewUrlExtractor @Inject constructor(
 
             // Find the best audio format with a direct URL (not signatureCipher).
             // Prefers Opus 251/250 over AAC even at equal/lower bitrate.
-            val streamUrl = selectBestAudioUrl(adaptiveFormats.filterIsInstance<JsonObject>()) ?: run {
+            val bestFormat = selectBestAudioFormat(adaptiveFormats.filterIsInstance<JsonObject>()) ?: run {
                 Log.d(TAG, "InnerTube: no audio formats with direct URL for $videoId " +
                     "(${adaptiveFormats.size} total formats, all may be ciphered)")
+                return@withTimeout null
+            }
+            val streamUrl = bestFormat["url"]?.jsonPrimitive?.content ?: return@withTimeout null
+
+            // A PO-token-gated URL serves ~1MB then 403s. Handing one back is what
+            // killed playback on 2026-06-08 and cost us the fast lane; the probe is
+            // what makes this path safe for whole tracks rather than previews only.
+            // Rejection just defers to yt-dlp, exactly as a cipher miss does.
+            val contentLength = bestFormat["contentLength"]?.jsonPrimitive?.content?.toLongOrNull()
+            if (!tailProbe.servesFullFile(streamUrl, contentLength)) {
+                Log.i(TAG, "InnerTube: URL failed the tail probe for $videoId — deferring to yt-dlp")
                 return@withTimeout null
             }
 
