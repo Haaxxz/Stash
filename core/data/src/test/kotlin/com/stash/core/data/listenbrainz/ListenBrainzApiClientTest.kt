@@ -139,11 +139,34 @@ class ListenBrainzApiClientTest {
         assertThat(server.requestCount).isEqualTo(0)
     }
 
-    @Test fun `validateToken reports success and failure`() = runBlocking {
-        server.enqueue(MockResponse().setResponseCode(200).setBody("""{"valid":true}"""))
+    @Test fun `validateToken accepts a token the service says is valid`() = runBlocking {
+        server.enqueue(
+            MockResponse().setResponseCode(200)
+                .setBody("""{"code":200,"message":"Token valid.","valid":true}"""),
+        )
         assertThat(client.validateToken("good")).isTrue()
+    }
 
-        server.enqueue(MockResponse().setResponseCode(401))
-        assertThat(client.validateToken("bad")).isFalse()
+    /**
+     * The bug this test exists for: /1/validate-token answers HTTP **200** with
+     * `valid:false` for a bad token — it reports on the token rather than rejecting
+     * the request. An implementation that checks only the status code accepts any
+     * string, which is what shipped until an on-device test connected successfully
+     * with "not-a-real-token-12345". The previous version of this test asserted
+     * 401 -> false, a response this endpoint does not give, so it passed while the
+     * real path was broken.
+     */
+    @Test fun `validateToken rejects a bad token despite HTTP 200`() = runBlocking {
+        server.enqueue(
+            MockResponse().setResponseCode(200)
+                .setBody("""{"code":200,"message":"Token invalid.","valid":false}"""),
+        )
+        assertThat(client.validateToken("not-a-real-token-12345")).isFalse()
+    }
+
+    /** Fail closed: an unreadable body must not count as a valid token. */
+    @Test fun `validateToken rejects an unparseable body`() = runBlocking {
+        server.enqueue(MockResponse().setResponseCode(200).setBody("not json"))
+        assertThat(client.validateToken("weird")).isFalse()
     }
 }

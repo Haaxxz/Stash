@@ -4,6 +4,9 @@ import android.util.Log
 import com.stash.core.data.listen.Listen
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.add
 import kotlinx.serialization.json.buildJsonObject
@@ -97,7 +100,16 @@ class ListenBrainzApiClient @Inject constructor(
         return post(token, body)
     }
 
-    /** Verifies a pasted token before we store it, so a typo fails at paste time. */
+    /**
+     * Verifies a pasted token before we store it, so a typo fails at paste time.
+     *
+     * **The status code is not the answer here.** `/1/validate-token` replies
+     * `HTTP 200` with `{"code":200,"message":"Token invalid.","valid":false}` for a
+     * bad token — it reports on the token, it does not reject the request. Checking
+     * only `isSuccessful` therefore accepts literally any string, which is exactly
+     * what shipped until an on-device test connected with "not-a-real-token-12345".
+     * The `valid` field is the only thing that actually answers the question.
+     */
     suspend fun validateToken(token: String): Boolean = withContext(Dispatchers.IO) {
         val request = Request.Builder()
             .url("$baseUrl/1/validate-token")
@@ -105,7 +117,15 @@ class ListenBrainzApiClient @Inject constructor(
             .get()
             .build()
         runCatching {
-            okHttpClient.newCall(request).execute().use { it.isSuccessful }
+            okHttpClient.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) return@use false
+                val body = response.body?.string().orEmpty()
+                // Fail closed on an unreadable body: storing a token we could not
+                // confirm is how you get a connection that never scrobbles.
+                runCatching {
+                    Json.parseToJsonElement(body).jsonObject["valid"]?.jsonPrimitive?.content == "true"
+                }.getOrDefault(false)
+            }
         }.getOrElse {
             Log.d(TAG, "token validation failed: ${it.message}")
             false
