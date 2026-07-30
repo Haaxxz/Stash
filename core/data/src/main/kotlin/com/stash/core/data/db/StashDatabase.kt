@@ -85,7 +85,7 @@ import com.stash.core.data.db.entity.TrackTagEntity
         FlacUpgradeQueueEntity::class,
         ListenSubmissionEntity::class,
     ],
-    version = 37,
+    version = 38,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)
@@ -937,6 +937,21 @@ abstract class StashDatabase : RoomDatabase() {
          * scrobbling that already works. Moving those two onto this table is a
          * separate change, made after the new path has proven itself.
          */
+        /**
+         * v37 → v38: add `tracks.lastfm_loved_at` so Last.fm joins Spotify and
+         * YouTube as a like-mirror destination.
+         *
+         * Not just deduplication: `track.unlove` destroys data Stash does not own.
+         * A user may have loved a track on Last.fm long before installing Stash,
+         * and un-hearting it here must not silently delete that. Only a love this
+         * column records — one Stash created — is ever un-loved.
+         */
+        val MIGRATION_37_38 = object : Migration(37, 38) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE tracks ADD COLUMN lastfm_loved_at INTEGER DEFAULT NULL")
+            }
+        }
+
         val MIGRATION_36_37 = object : Migration(36, 37) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL(
