@@ -51,14 +51,29 @@ class ListenBrainzSink @Inject constructor(
         return when (val response = api.submitListens(token, batch)) {
             is ListenBrainzApiClient.Response.Accepted -> SinkResult.Success
 
-            // 401 is a dead token, and it is worth naming: the user has to paste a
-            // new one, and retrying until the attempt cap silently discards those
-            // listens instead of telling anybody.
+            // 401 is an ACCOUNT problem, not a listen problem, so it must not burn
+            // retries — the listens are perfectly good and will submit once the
+            // user fixes things. Treating it as a rejection would mark them FAILED
+            // and silently discard them at the attempt cap, which is the same
+            // "an outage costs history" failure the Transient/Rejected split exists
+            // to prevent.
+            //
+            // Seen in the wild on 2026-07-30 with a token that passed
+            // /1/validate-token: ListenBrainz answers 401 with "your MetaBrainz
+            // account does not have a verified email address". Nothing about the
+            // payload is wrong, and nothing about retrying is futile — the user
+            // just has to verify their email.
             is ListenBrainzApiClient.Response.Refused -> {
                 if (response.code == 401) {
-                    Log.w(TAG, "token rejected — the user must reconnect ListenBrainz")
+                    Log.w(
+                        TAG,
+                        "401 from ListenBrainz — account or token problem, holding " +
+                            "listens: ${response.message}",
+                    )
+                    SinkResult.Transient("HTTP 401: ${response.message}")
+                } else {
+                    SinkResult.Rejected("HTTP ${response.code}: ${response.message}")
                 }
-                SinkResult.Rejected("HTTP ${response.code}: ${response.message}")
             }
 
             is ListenBrainzApiClient.Response.Unavailable ->
