@@ -128,6 +128,16 @@ class DownloadManager @Inject constructor(
     private val audioDurationExtractor: AudioDurationExtractor,
     private val losslessHealthGate: LosslessSourceHealthGate,
 ) {
+    /**
+     * Test/build seam for the debug-build YT-fallback carve-out below.
+     * Defaults to the real [BuildConfig.DEBUG] so production behavior is
+     * unchanged, but unit tests — which always run under the debug test
+     * variant, where BuildConfig.DEBUG is unconditionally true — can flip
+     * this to false to actually exercise the release strict-FLAC deferral
+     * path instead of it being permanently unreachable in tests.
+     */
+    internal var forceYoutubeFallbackOnDebugBuilds: Boolean = BuildConfig.DEBUG
+
     /** Limits concurrent downloads. 8 parallel slots — with native opus (no FFmpeg
      *  transcode) downloads are almost entirely network-bound so more parallelism helps. */
     private val concurrencySemaphore = Semaphore(8)
@@ -218,7 +228,7 @@ class DownloadManager @Inject constructor(
                 // respecting "fallback off" here would permanently strand every beta
                 // tester's tracks in WAITING_FOR_LOSSLESS regardless of their toggle.
                 // Force YT fallback on debug builds; release keeps real strict-FLAC.
-                if (BuildConfig.DEBUG) {
+                if (forceYoutubeFallbackOnDebugBuilds) {
                     Log.i(
                         TAG,
                         "debug build: forcing YT fallback for '${track.artist} - ${track.title}' " +
