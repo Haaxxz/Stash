@@ -66,7 +66,8 @@ object DatabaseModule {
                 StashDatabase.MIGRATION_32_33,
                 StashDatabase.MIGRATION_33_34,
                 StashDatabase.MIGRATION_34_35,
-                StashDatabase.MIGRATION_35_36
+                StashDatabase.MIGRATION_35_36,
+                StashDatabase.MIGRATION_36_37
             )
             // No fallbackToDestructiveMigration() — if a migration is missing,
             // the app will crash on startup instead of silently wiping the
