@@ -20,11 +20,23 @@ import javax.inject.Singleton
  * which keeps this class synchronous to reason about and trivial to test.
  */
 @Singleton
-class ListenSinkDrainer @Inject constructor(
+class ListenSinkDrainer internal constructor(
     private val submissionDao: ListenSubmissionDao,
     private val trackDao: TrackDao,
-    private val clock: () -> Long = System::currentTimeMillis,
+    private val clock: () -> Long,
 ) {
+    /**
+     * Hilt entry point. The clock stays off this signature deliberately: giving it
+     * a default value would generate two JVM constructors and Dagger would try to
+     * provide `Function0<Long>`, which nothing binds. Same reasoning as
+     * [com.stash.core.data.social.LikeCoordinator]'s scope/minGap pair.
+     */
+    @Inject
+    constructor(
+        submissionDao: ListenSubmissionDao,
+        trackDao: TrackDao,
+    ) : this(submissionDao, trackDao, System::currentTimeMillis)
+
 
     data class DrainReport(
         val sinkId: String,
