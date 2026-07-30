@@ -1280,6 +1280,7 @@ class SettingsViewModel @Inject constructor(
         when (destination) {
             Destination.SPOTIFY -> likePreferences.setMirrorLikesSpotify(value)
             Destination.YT_MUSIC -> likePreferences.setMirrorLikesYtMusic(value)
+            Destination.LAST_FM -> likePreferences.setMirrorLikesLastFm(value)
             Destination.STASH -> Unit // local likes are always on; not a mirror target
         }
     }
