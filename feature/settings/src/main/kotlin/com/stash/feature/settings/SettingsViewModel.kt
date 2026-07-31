@@ -182,6 +182,22 @@ class SettingsViewModel @Inject constructor(
             initialValue = false,
         )
 
+    /**
+     * Issue #112 — submit only the primary artist to Last.fm. Exposed as its
+     * own flow rather than folded into the main `combine`, which is index-based
+     * (`values[N]`) and would need every downstream index shifted.
+     */
+    val scrobbleFirstArtistOnly: StateFlow<Boolean> =
+        lastFmSessionPreference.firstArtistOnly.stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5_000),
+            initialValue = false,
+        )
+
+    fun onScrobbleFirstArtistOnlyChanged(enabled: Boolean) {
+        viewModelScope.launch { lastFmSessionPreference.setFirstArtistOnly(enabled) }
+    }
+
     fun onListenBrainzTokenChange(value: String) {
         _listenBrainzTokenInput.value = value
         // Clear a previous failure as soon as the user edits — leaving the error up
