@@ -1,6 +1,5 @@
 package com.stash.core.data.sync
 
-import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
@@ -22,13 +21,39 @@ import javax.inject.Singleton
  */
 @Singleton
 class TrackIdentityEvents @Inject constructor() {
+    /**
+     * Buffered generously and **never dropping**.
+     *
+     * This started as `extraBufferCapacity = 8, DROP_OLDEST`, which is the right
+     * shape for a progress or UI signal where the newest value supersedes the last.
+     * Cache invalidation is the opposite: every event is load-bearing and none is
+     * made redundant by a later one. A dropped event leaves that track's stale
+     * StreamUrl in place — the exact bug this class exists to fix, reappearing
+     * intermittently instead of consistently.
+     *
+     * The emitters are the bulk paths (YtLibraryCanonicalizer sweeping OMV→ATV
+     * across a library, batched resync approvals), so a small buffer would drop
+     * during precisely the operations that change the most identities.
+     *
+     * `tryEmit` cannot suspend, so backpressure isn't available here; the buffer
+     * is instead sized past any realistic burst, and [emitIdentityChanged] logs if
+     * one is ever refused rather than losing it silently.
+     */
     private val _changes = MutableSharedFlow<Long>(
-        extraBufferCapacity = 8,
-        onBufferOverflow = BufferOverflow.DROP_OLDEST,
+        extraBufferCapacity = 512,
     )
     val changes: SharedFlow<Long> = _changes.asSharedFlow()
 
     fun emitIdentityChanged(trackId: Long) {
-        _changes.tryEmit(trackId)
+        if (!_changes.tryEmit(trackId)) {
+            // Only reachable if the buffer is genuinely saturated. Says so out
+            // loud: the consequence is a track that keeps serving a stale URL,
+            // which otherwise presents as "won't play" or "played the wrong
+            // song" with nothing in the logs to explain it.
+            android.util.Log.w(
+                "TrackIdentityEvents",
+                "identity-change buffer full — stale StreamUrl may persist for track $trackId",
+            )
+        }
     }
 }
