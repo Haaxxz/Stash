@@ -7,6 +7,9 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -20,6 +23,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
@@ -36,6 +41,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.semantics.Role
@@ -46,6 +53,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.stash.core.ui.components.GlassCard
+import com.stash.core.ui.theme.StashTheme
 import com.stash.data.download.lossless.LosslessQualityTier
 import com.stash.feature.settings.components.AudioQualityPicker
 import com.stash.feature.settings.components.BetaPill
@@ -139,9 +147,43 @@ fun SettingsAudioQualityScreen(
                         // kennyy/squid proxies are parked and no longer shown.
                         LosslessRoutingStatus()
 
-                        // ARCOD connect row: removed 2026-07-01 while ARCOD is
-                        // parked (host down for us). ArcodConnectScreen + the
-                        // onNavigateToArcodConnect route stay wired for re-enabling.
+                        // ARCOD — independent Qobuz lossless (a 2nd live source
+                        // alongside qbdlx). Connect via Google login in an in-app
+                        // WebView. Restored 2026-08-01 after the operator rotated
+                        // the key + moved us to the /v2/stash routes (verified live).
+                        SettingsNavRow(
+                            title = if (uiState.arcodConnected) {
+                                "ARCOD — connected"
+                            } else {
+                                "Connect ARCOD"
+                            },
+                            subtitle = "Independent Qobuz lossless (2nd source)",
+                            onClick = onNavigateToArcodConnect,
+                            leadingContent = {
+                                Image(
+                                    painter = painterResource(
+                                        id = com.stash.core.ui.R.drawable.partner_arcod,
+                                    ),
+                                    contentDescription = null, // decorative; the row title already says "ARCOD"
+                                    contentScale = ContentScale.Fit,
+                                    modifier = Modifier
+                                        .size(22.dp)
+                                        .clip(RoundedCornerShape(6.dp)),
+                                )
+                            },
+                            titleTrailing = if (uiState.arcodConnected) {
+                                {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(7.dp)
+                                            .clip(CircleShape)
+                                            .background(StashTheme.extendedColors.success),
+                                    )
+                                }
+                            } else {
+                                null
+                            },
+                        )
 
                         // Direct Qobuz — direct www.qobuz.com Hi-Res FLAC, the
                         // primary lossless source. Per-source enable toggle gates
