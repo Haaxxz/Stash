@@ -42,6 +42,11 @@ fun qbdlxProp(key: String, env: String) =
 val qbdlxAppId = qbdlxProp("qbdlx.appId", "QBDLX_APP_ID")
 val qbdlxAppSecret = qbdlxProp("qbdlx.appSecret", "QBDLX_APP_SECRET")
 val qbdlxTokenPool = qbdlxProp("qbdlx.tokenPool", "QBDLX_TOKEN_POOL")
+// EXTRA app_id:secret pairs beyond the primary (comma-separated), for pool tokens
+// minted under a different Qobuz app_id. The primary pair is seeded by the store
+// itself, so this holds only the additional pairs. Public creds (from Qobuz's own
+// web/app bundles), but kept out of the repo like the primary — build-injected.
+val qbdlxAppSecrets = qbdlxProp("qbdlx.appSecrets", "QBDLX_APP_SECRETS")
 
 // AES-256-GCM encrypt the pool at build time (mirrors the runtime
 // QbdlxPoolCipher — keep the two in sync). The fixture test guards the RUNTIME
@@ -86,6 +91,7 @@ android {
         buildConfigField("String", "ARCOD_STREAM_BASE", "\"$arcodStreamBase\"")
         buildConfigField("String", "QBDLX_APP_ID", "\"$qbdlxAppId\"")
         buildConfigField("String", "QBDLX_APP_SECRET", "\"$qbdlxAppSecret\"")
+        buildConfigField("String", "QBDLX_APP_SECRETS", "\"$qbdlxAppSecrets\"")
         buildConfigField("String", "QBDLX_TOKEN_POOL", "\"$qbdlxTokenPoolEnc\"")
         buildConfigField("String", "QBDLX_POOL_FP", "\"$qbdlxPoolFp\"")
         buildConfigField("Boolean", "QBDLX_CONFIGURED", "$qbdlxConfigured")

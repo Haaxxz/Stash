@@ -17,7 +17,10 @@ class QbdlxApiClientTest {
         server = MockWebServer(); server.start()
         client = QbdlxApiClient(
             sharedClient = OkHttpClient(),
-            signer = QbdlxSigner("secret") { 1000L },
+            signer = QbdlxSigner { 1000L },
+            // Every token in these tests signs under the same test pair; getFileUrl
+            // reads app_id/secret from here (the real store resolves per-token).
+            signingResolver = { QbdlxSigning(appId = "798273057", appSecret = "secret") },
         ).also {
             it.baseUrl = server.url("/").toString().trimEnd('/')
             it.appId = "798273057"   // appId is an internal var (reads BuildConfig in prod), set here for the test
