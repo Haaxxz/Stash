@@ -188,8 +188,18 @@ class DiffWorker @AssistedInject constructor(
                 // and needs its id to drive the block below).
                 val localPlaylist = findOrCreatePlaylist(playlistSnapshot, streamingMode)
 
-                // Skip playlists the user has disabled in Sync Preferences.
-                if (!localPlaylist.syncEnabled) {
+                // Skip playlists the user has disabled in Sync Preferences —
+                // EXCEPT algorithmic mixes, which are surface-only.
+                //
+                // A mix can never enqueue a download regardless of this flag
+                // (shouldEnqueueForDownload excludes DAILY_MIX outright), and the
+                // fetch worker has ALREADY pulled its tracks over the network this
+                // run. Skipping therefore bought nothing and threw that work away,
+                // leaving the mix on screen with zero tracks — the "I have 130
+                // mixes but Home shows nothing" report. Linking them is pure
+                // local bookkeeping: no extra request, no unasked downloads, and
+                // Online mode can stream them on tap.
+                if (!localPlaylist.syncEnabled && localPlaylist.type != PlaylistType.DAILY_MIX) {
                     Log.d(TAG, "Playlist '${playlistSnapshot.playlistName}' sync disabled, skipping")
                     continue
                 }
