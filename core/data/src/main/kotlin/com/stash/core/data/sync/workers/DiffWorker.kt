@@ -92,6 +92,7 @@ class DiffWorker @AssistedInject constructor(
     private val syncPreferencesManager: SyncPreferencesManager,
     private val blocklistGuard: com.stash.core.data.blocklist.BlocklistGuard,
     private val streamingPreference: com.stash.core.data.prefs.StreamingPreference,
+    private val syncUndoDao: com.stash.core.data.db.dao.SyncUndoDao,
 ) : CoroutineWorker(appContext, params) {
 
     companion object {
@@ -134,6 +135,22 @@ class DiffWorker @AssistedInject constructor(
         try {
             syncStateManager.onDiffing()
             syncHistoryDao.updateStatus(syncId, SyncState.DIFFING)
+
+            // Restore point for "Undo last sync", captured BEFORE anything
+            // destructive: everything above this line only reads or writes
+            // snapshot tables, while below it REFRESH clears playlist membership
+            // and stale playlists get deactivated. Bulk INSERT…SELECT, so this is
+            // one statement per table rather than a per-row copy.
+            //
+            // Never fatal: a sync that works must not be blocked because the
+            // safety net couldn't be set up. Worst case the user has no undo for
+            // this run, which is exactly where they were before the feature.
+            runCatching {
+                syncUndoDao.capture(syncId, System.currentTimeMillis())
+            }.onFailure { e ->
+                if (e is kotlin.coroutines.cancellation.CancellationException) throw e
+                Log.w(TAG, "Undo restore point capture failed for sync $syncId", e)
+            }
 
             // Read each source's sync mode once at the start of the diff
             // pass. Per-source (not global) as of v0.5 — the user picks

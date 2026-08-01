@@ -12,6 +12,7 @@ import com.stash.core.data.db.dao.DownloadQueueDao
 import com.stash.core.data.db.dao.FlacUpgradeQueueDao
 import com.stash.core.data.db.dao.LastFmCacheDao
 import com.stash.core.data.db.dao.ListenSubmissionDao
+import com.stash.core.data.db.dao.SyncUndoDao
 import com.stash.core.data.db.dao.ListeningEventDao
 import com.stash.core.data.db.dao.LyricsDao
 import com.stash.core.data.db.dao.PlaylistDao
@@ -30,6 +31,9 @@ import com.stash.core.data.db.entity.DownloadQueueEntity
 import com.stash.core.data.db.entity.FlacUpgradeQueueEntity
 import com.stash.core.data.db.entity.LastFmCacheEntity
 import com.stash.core.data.db.entity.ListenSubmissionEntity
+import com.stash.core.data.db.entity.SyncUndoMembershipEntity
+import com.stash.core.data.db.entity.SyncUndoPlaylistEntity
+import com.stash.core.data.db.entity.SyncUndoPointEntity
 import com.stash.core.data.db.entity.ListeningEventEntity
 import com.stash.core.data.db.entity.LyricsEntity
 import com.stash.core.data.db.entity.PlaylistEntity
@@ -84,8 +88,11 @@ import com.stash.core.data.db.entity.TrackTagEntity
         SpotifyResolutionEntity::class,
         FlacUpgradeQueueEntity::class,
         ListenSubmissionEntity::class,
+        SyncUndoPointEntity::class,
+        SyncUndoPlaylistEntity::class,
+        SyncUndoMembershipEntity::class,
     ],
-    version = 38,
+    version = 39,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)
@@ -126,6 +133,8 @@ abstract class StashDatabase : RoomDatabase() {
     abstract fun flacUpgradeQueueDao(): FlacUpgradeQueueDao
 
     abstract fun listenSubmissionDao(): ListenSubmissionDao
+
+    abstract fun syncUndoDao(): SyncUndoDao
 
 
     companion object {
@@ -949,6 +958,60 @@ abstract class StashDatabase : RoomDatabase() {
         val MIGRATION_37_38 = object : Migration(37, 38) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE tracks ADD COLUMN lastfm_loved_at INTEGER DEFAULT NULL")
+            }
+        }
+
+        /**
+         * Restore points for "Undo last sync" — a copy of playlist visibility and
+         * playlist membership taken before each sync's diff.
+         *
+         * NO foreign keys on these tables, deliberately: a backup must survive the
+         * very deletions it exists to reverse, and `playlist_tracks` cascades from
+         * both `playlists` and `tracks`. Referential integrity is re-checked at
+         * restore time instead (see SyncUndoDao.restoreMemberships).
+         */
+        val MIGRATION_38_39 = object : Migration(38, 39) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `sync_undo_points` (
+                        `sync_id` INTEGER NOT NULL,
+                        `created_at` INTEGER NOT NULL,
+                        `playlist_count` INTEGER NOT NULL,
+                        `membership_count` INTEGER NOT NULL,
+                        PRIMARY KEY(`sync_id`)
+                    )
+                    """.trimIndent(),
+                )
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `sync_undo_playlists` (
+                        `sync_id` INTEGER NOT NULL,
+                        `playlist_id` INTEGER NOT NULL,
+                        `is_active` INTEGER NOT NULL,
+                        `sync_enabled` INTEGER NOT NULL,
+                        PRIMARY KEY(`sync_id`, `playlist_id`)
+                    )
+                    """.trimIndent(),
+                )
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `sync_undo_memberships` (
+                        `sync_id` INTEGER NOT NULL,
+                        `playlist_id` INTEGER NOT NULL,
+                        `track_id` INTEGER NOT NULL,
+                        `position` INTEGER NOT NULL,
+                        `added_at` INTEGER,
+                        `removed_at` INTEGER,
+                        `locally_added` INTEGER NOT NULL,
+                        PRIMARY KEY(`sync_id`, `playlist_id`, `track_id`)
+                    )
+                    """.trimIndent(),
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_sync_undo_memberships_sync_id` " +
+                        "ON `sync_undo_memberships` (`sync_id`)",
+                )
             }
         }
 
