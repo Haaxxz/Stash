@@ -135,6 +135,7 @@ class PlaylistFetchWorker @AssistedInject constructor(
     private val syncHistoryDao: SyncHistoryDao,
     private val remoteSnapshotDao: RemoteSnapshotDao,
     private val syncStateManager: SyncStateManager,
+    private val syncLog: com.stash.core.data.sync.SyncLog,
     private val syncNotificationManager: SyncNotificationManager,
     private val syncPreferencesManager: SyncPreferencesManager,
     private val spotifyAuthHealthProbe: SpotifyAuthHealthProbe,
@@ -229,6 +230,10 @@ class PlaylistFetchWorker @AssistedInject constructor(
         )
         val syncId = syncHistoryDao.insert(syncEntry)
         val diagnostics = java.util.Collections.synchronizedList(mutableListOf<SyncStepResult>())
+        // Starts a fresh terminal for this run. Previous lines are cleared here
+        // rather than at the end, so the last run stays readable until a new one
+        // begins — reading it AFTER the fact is the point.
+        syncLog.beginRun("Starting sync…")
 
         try {
             // Step 2: Authenticating phase.
@@ -392,6 +397,9 @@ class PlaylistFetchWorker @AssistedInject constructor(
                     val dailyMixes = result.data
                     diagnostics.add(SyncStepResult("SPOTIFY", "getDailyMixes", StepStatus.SUCCESS, dailyMixes.size))
                     Log.d(TAG, "fetchSpotifyPlaylists: found ${dailyMixes.size} daily mixes")
+                    syncLog.info("Spotify home feed — ${dailyMixes.size} mixes: " +
+                        dailyMixes.take(6).joinToString(", ") { it.name } +
+                        if (dailyMixes.size > 6) ", +${dailyMixes.size - 6} more" else "")
 
                     for (mix in dailyMixes) {
                         homeFeedMixIds += mix.id
@@ -698,11 +706,13 @@ class PlaylistFetchWorker @AssistedInject constructor(
                     if (!fetchFailed) {
                         userPlaylistCount++
                         Log.d(TAG, "fetchSpotifyPlaylists: '${playlist.name}' — ${trackSnapshots.size} tracks")
+                        syncLog.success("${playlist.name} — ${trackSnapshots.size} tracks")
                     }
                 } catch (e: Exception) {
                     if (e is CancellationException) throw e
                     inventoryComplete = false
                     Log.w(TAG, "fetchSpotifyPlaylists: snapshot failed for '${playlist.name}'", e)
+                    syncLog.warn("${playlist.name} — couldn't fetch tracks (kept as-is)")
                 }
                 reportPlaylistFetched()
             }
@@ -713,7 +723,10 @@ class PlaylistFetchWorker @AssistedInject constructor(
                     currentSourceIds = currentIds,
                     hasCurrentIds = currentIds.isNotEmpty(),
                 )
-                if (hidden > 0) Log.i(TAG, "Deactivated $hidden missing Spotify custom playlist(s)")
+                if (hidden > 0) {
+                    Log.i(TAG, "Deactivated $hidden missing Spotify custom playlist(s)")
+                    syncLog.warn("Hid $hidden Spotify playlist(s) no longer in your account")
+                }
             }
             diagnostics.add(
                 SyncStepResult(

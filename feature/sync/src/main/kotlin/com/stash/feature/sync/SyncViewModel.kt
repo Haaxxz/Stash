@@ -184,6 +184,7 @@ class SyncViewModel @Inject constructor(
     private val syncHistoryDao: SyncHistoryDao,
     private val playlistDao: com.stash.core.data.db.dao.PlaylistDao,
     private val syncUndoDao: com.stash.core.data.db.dao.SyncUndoDao,
+    private val syncLog: com.stash.core.data.sync.SyncLog,
     private val downloadQueueDao: com.stash.core.data.db.dao.DownloadQueueDao,
     private val musicRepository: com.stash.core.data.repository.MusicRepository,
     private val blocklistGuard: com.stash.core.data.blocklist.BlocklistGuard,
@@ -245,6 +246,21 @@ class SyncViewModel @Inject constructor(
                 started = SharingStarted.WhileSubscribed(5_000),
                 initialValue = null,
             )
+
+    /**
+     * Live account of what the running sync is finding. Drives the terminal on
+     * the Sync tab; empty until the first sync of this app session.
+     */
+    val syncLogLines: StateFlow<List<com.stash.core.data.sync.SyncLog.Line>> =
+        syncLog.lines
+            .stateIn(
+                scope = viewModelScope,
+                started = SharingStarted.WhileSubscribed(5_000),
+                initialValue = emptyList(),
+            )
+
+    /** The log as plain text, for the copy-to-clipboard action (bug reports). */
+    fun syncLogAsText(): String = syncLog.asPlainText()
 
     /** True while an undo is applying — the button disables so it can't double-fire. */
     private val _undoInProgress = MutableStateFlow(false)

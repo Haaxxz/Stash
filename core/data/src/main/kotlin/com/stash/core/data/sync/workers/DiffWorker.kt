@@ -93,6 +93,7 @@ class DiffWorker @AssistedInject constructor(
     private val blocklistGuard: com.stash.core.data.blocklist.BlocklistGuard,
     private val streamingPreference: com.stash.core.data.prefs.StreamingPreference,
     private val syncUndoDao: com.stash.core.data.db.dao.SyncUndoDao,
+    private val syncLog: com.stash.core.data.sync.SyncLog,
 ) : CoroutineWorker(appContext, params) {
 
     companion object {
@@ -147,9 +148,11 @@ class DiffWorker @AssistedInject constructor(
             // this run, which is exactly where they were before the feature.
             runCatching {
                 syncUndoDao.capture(syncId, System.currentTimeMillis())
+                syncLog.info("Saved a restore point — this sync can be undone")
             }.onFailure { e ->
                 if (e is kotlin.coroutines.cancellation.CancellationException) throw e
                 Log.w(TAG, "Undo restore point capture failed for sync $syncId", e)
+                syncLog.warn("Couldn't save a restore point — undo unavailable for this sync")
             }
 
             // Read each source's sync mode once at the start of the diff
@@ -223,6 +226,9 @@ class DiffWorker @AssistedInject constructor(
                     )
                 }
                 newTrackCount += playlistNewTracks
+                if (playlistNewTracks > 0) {
+                    syncLog.success("${playlistSnapshot.playlistName} — $playlistNewTracks new track(s)")
+                }
                 playlistsDiffed++
                 syncStateManager.onDiffing(playlistsDiffed, playlistSnapshots.size)
             }
@@ -255,12 +261,20 @@ class DiffWorker @AssistedInject constructor(
                 )
                 if (hidden > 0) {
                     Log.i(TAG, "Deactivated $hidden stale YouTube playlist(s)")
+                    syncLog.warn("Hid $hidden YouTube playlist(s) not returned this run (Refresh mode)")
                 }
             } else if (youtubeSourceIds.isNotEmpty()) {
                 Log.i(
                     TAG,
                     "Skipping stale-YouTube-playlist deactivation " +
                         "(mode=$youtubeSyncMode inventoryComplete=$youtubeInventoryComplete)",
+                )
+                syncLog.info(
+                    if (youtubeSyncMode != com.stash.core.model.SyncMode.REFRESH) {
+                        "Kept all YouTube playlists (Accumulate never removes)"
+                    } else {
+                        "Kept all YouTube playlists — this run's fetch was incomplete"
+                    },
                 )
             }
 

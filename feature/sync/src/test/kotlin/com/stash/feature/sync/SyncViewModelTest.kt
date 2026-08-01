@@ -46,6 +46,9 @@ class SyncViewModelTest {
     private val syncHistoryDao = mockk<com.stash.core.data.db.dao.SyncHistoryDao>(relaxed = true)
     private val playlistDao = mockk<com.stash.core.data.db.dao.PlaylistDao>(relaxed = true)
     private val syncUndoDao = mockk<com.stash.core.data.db.dao.SyncUndoDao>(relaxed = true)
+    // Real instance: it's a plain in-memory holder, so a fake would only
+    // restate its behaviour while hiding the flow the VM collects at init.
+    private val syncLog = com.stash.core.data.sync.SyncLog()
     private val downloadQueueDao = mockk<com.stash.core.data.db.dao.DownloadQueueDao>(relaxed = true)
     private val musicRepository = mockk<com.stash.core.data.repository.MusicRepository>(relaxed = true)
     private val blocklistGuard = mockk<com.stash.core.data.blocklist.BlocklistGuard>(relaxed = true)
@@ -85,6 +88,7 @@ class SyncViewModelTest {
         syncHistoryDao = syncHistoryDao,
         playlistDao = playlistDao,
         syncUndoDao = syncUndoDao,
+        syncLog = syncLog,
         downloadQueueDao = downloadQueueDao,
         musicRepository = musicRepository,
         blocklistGuard = blocklistGuard,

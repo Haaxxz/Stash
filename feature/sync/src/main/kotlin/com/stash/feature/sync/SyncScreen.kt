@@ -22,6 +22,11 @@ import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Block
 import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.Restore
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.FilterChip
@@ -79,6 +84,8 @@ fun SyncScreen(
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val blockedCount by viewModel.blockedCount.collectAsStateWithLifecycle()
     val failedDownloadsCount by viewModel.failedDownloadsCount.collectAsStateWithLifecycle()
+    val syncLogLines by viewModel.syncLogLines.collectAsStateWithLifecycle()
+    val clipboard = LocalClipboardManager.current
     val undoPoint by viewModel.undoPoint.collectAsStateWithLifecycle()
     val undoInProgress by viewModel.undoInProgress.collectAsStateWithLifecycle()
     val undoResult by viewModel.undoResult.collectAsStateWithLifecycle()
@@ -177,6 +184,20 @@ fun SyncScreen(
                 FailedDownloadsCard(
                     count = failedDownloadsCount,
                     onClick = onNavigateToFailedDownloads,
+                )
+            }
+        }
+
+        // -- Live sync terminal ----------------------------------------------
+        // Only once a run has produced lines, so a fresh install shows no empty
+        // black box. Sits above Undo: what happened, then how to take it back.
+        if (syncLogLines.isNotEmpty()) {
+            item(key = "sync_terminal") {
+                SyncTerminalCard(
+                    lines = syncLogLines,
+                    onCopy = {
+                        clipboard.setText(AnnotatedString(viewModel.syncLogAsText()))
+                    },
                 )
             }
         }
@@ -707,6 +728,81 @@ private fun FailedDownloadsCard(
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.size(20.dp),
             )
+        }
+    }
+}
+
+/**
+ * Live sync terminal: what the run is actually finding, as it happens.
+ *
+ * The progress counter ("fetched 52… 53…") proves a sync is moving but says
+ * nothing about WHAT it found, so a sync that quietly hid half a library looked
+ * identical to a good one. Each line names a playlist and its track count, and
+ * the decisions that change the library ("Hid 21 YouTube playlists…") are stated
+ * outright instead of living only in logcat.
+ *
+ * Auto-follows the tail while running, and stays readable after the run ends —
+ * reading it afterwards is most of the point. "Copy" yields the whole log as
+ * text, which is what turns a vague report into a diagnosable one.
+ */
+@Composable
+private fun SyncTerminalCard(
+    lines: List<com.stash.core.data.sync.SyncLog.Line>,
+    onCopy: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val extendedColors = StashTheme.extendedColors
+    val listState = rememberLazyListState()
+
+    // Follow the tail as new lines land. Keyed on size so a user who scrolls up
+    // mid-run isn't yanked back on every single line.
+    LaunchedEffect(lines.size) {
+        if (lines.isNotEmpty()) listState.animateScrollToItem(lines.lastIndex)
+    }
+
+    Surface(
+        modifier = modifier.fillMaxWidth(),
+        color = extendedColors.glassBackground,
+        shape = RoundedCornerShape(16.dp),
+        border = BorderStroke(1.dp, extendedColors.glassBorder),
+    ) {
+        Column(modifier = Modifier.fillMaxWidth().padding(12.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = "SYNC LOG",
+                    style = MaterialTheme.typography.labelSmall,
+                    fontFamily = FontFamily.Monospace,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.weight(1f),
+                )
+                TextButton(onClick = onCopy) { Text("Copy") }
+            }
+            LazyColumn(
+                state = listState,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(180.dp),
+                verticalArrangement = Arrangement.spacedBy(2.dp),
+            ) {
+                items(lines.size) { i ->
+                    val line = lines[i]
+                    Text(
+                        text = line.text,
+                        style = MaterialTheme.typography.bodySmall,
+                        fontFamily = FontFamily.Monospace,
+                        color = when (line.level) {
+                            com.stash.core.data.sync.SyncLog.Level.SUCCESS ->
+                                StashTheme.extendedColors.success
+                            com.stash.core.data.sync.SyncLog.Level.WARN -> Color(0xFFF59E0B)
+                            com.stash.core.data.sync.SyncLog.Level.ERROR -> Color(0xFFEF4444)
+                            else -> MaterialTheme.colorScheme.onSurfaceVariant
+                        },
+                    )
+                }
+            }
         }
     }
 }
