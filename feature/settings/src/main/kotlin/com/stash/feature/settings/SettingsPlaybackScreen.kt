@@ -48,6 +48,7 @@ fun SettingsPlaybackScreen(
     val streamOnCellular by viewModel.streamOnCellular.collectAsStateWithLifecycle()
     val forceYouTubeFallback by viewModel.forceYouTubeFallback.collectAsStateWithLifecycle()
     val forceQbdlxOnly by viewModel.forceQbdlxOnly.collectAsStateWithLifecycle()
+    val forceArcodOnly by viewModel.forceArcodOnly.collectAsStateWithLifecycle()
     // Gates developer instruments out of release builds. Read from the installed
     // app's own flags rather than a module BuildConfig: it is the actual property we
     // care about ("is this a debuggable install"), and it needs no build-file change.
@@ -86,7 +87,11 @@ fun SettingsPlaybackScreen(
                             onCheckedChange = viewModel::setForceYouTubeFallback,
                         )
                     }
-                    // Force-ARCOD row: removed 2026-07-01 while ARCOD is parked.
+                    // Force-ARCOD came back 2026-08-01 when ARCOD was unparked — as a
+                    // DEBUG-ONLY row below, not the user-facing control it used to be.
+                    // It exists because arcod and qbdlx share the Qobuz catalog: qbdlx
+                    // always matches first, so arcod's path is otherwise unreachable
+                    // without disabling Direct Qobuz.
                     //
                     // "Stream via amz (test)" row: REMOVED 2026-07-31. amz is parked,
                     // so the toggle routed every stream and download through a source
@@ -106,6 +111,14 @@ fun SettingsPlaybackScreen(
                                 subtitle = "Debug builds only. Routes streaming and downloads through Qobuz with no YouTube fallback.",
                                 checked = forceQbdlxOnly,
                                 onCheckedChange = viewModel::setForceQbdlxOnly,
+                            )
+                        }
+                        add {
+                            SettingsToggleRow(
+                                title = "Force ARCOD only (debug)",
+                                subtitle = "Debug builds only. Routes streaming and downloads through ARCOD with no Qobuz or YouTube fallback, so a track either plays via ARCOD or fails visibly.",
+                                checked = forceArcodOnly,
+                                onCheckedChange = viewModel::setForceArcodOnly,
                             )
                         }
                     }
