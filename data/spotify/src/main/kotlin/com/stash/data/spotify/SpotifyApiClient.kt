@@ -126,9 +126,31 @@ class SpotifyApiClient @Inject constructor(
          * ponytail: owner rule first; add a deny-set only if device shows
          * editorial leakage (e.g. "Today's Top Hits" surfacing in the home feed).
          */
-        internal fun isSpotifyMix(name: String, ownerId: String): Boolean {
+        /**
+         * Spotify's EDITORIAL playlist id prefix. Editorial playlists are curated
+         * for everyone; personalized ones are generated for this listener.
+         *
+         * Verified against a real account (2026-08-01): every `37i9dQZF1D…` id was
+         * editorial — "Disco Fever", "70s Rock Anthems", "Ambient Essentials",
+         * "This Is <artist>" — while personalized surfaces carry other prefixes
+         * (`37i9dQZF1E…` for Daily Mix / artist Radio / mood Mix, `37i9dQZEVX…`
+         * for Discover Weekly and Release Radar).
+         *
+         * Matching on the id rather than the name is deliberate: names are
+         * localized and unbounded, ids are not.
+         */
+        private const val EDITORIAL_ID_PREFIX = "37i9dQZF1D"
+
+        internal fun isSpotifyMix(name: String, ownerId: String, playlistId: String = ""): Boolean {
             if (DAILY_MIX_REGEX.matches(name)) return true
             if (name.lowercase(java.util.Locale.ROOT) in SPOTIFY_MIX_NAMES) return true
+            // Editorial leakage guard. The owner rule below can't tell these apart:
+            // editorial playlists are spotify-owned too, so the catch-all swept in
+            // 66 of them on a real account (130 "mixes", over half not personalized).
+            // The Sync tab calls these MIXES, which promises "made for you" — a
+            // playlist curated for everyone doesn't qualify. A user who wants one
+            // saves it on Spotify, and it arrives as their own playlist instead.
+            if (playlistId.startsWith(EDITORIAL_ID_PREFIX)) return false
             return ownerId == "spotify"
         }
     }
@@ -497,7 +519,7 @@ class SpotifyApiClient @Inject constructor(
                             ?: "spotify"
                         val ownerName = ownerData?.get("name")?.jsonPrimitive?.contentOrNull ?: "Spotify"
 
-                        if (!isSpotifyMix(name, ownerId)) continue
+                        if (!isSpotifyMix(name, ownerId, uri.removePrefix("spotify:playlist:"))) continue
 
                         val playlistId = uri.removePrefix("spotify:playlist:")
 

@@ -92,7 +92,7 @@ import com.stash.core.data.db.entity.TrackTagEntity
         SyncUndoPlaylistEntity::class,
         SyncUndoMembershipEntity::class,
     ],
-    version = 39,
+    version = 40,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)
@@ -970,6 +970,38 @@ abstract class StashDatabase : RoomDatabase() {
          * both `playlists` and `tracks`. Referential integrity is re-checked at
          * restore time instead (see SyncUndoDao.restoreMemberships).
          */
+        /**
+         * One-time cleanup of editorial playlists that were misclassified as
+         * personalized "mixes".
+         *
+         * `isSpotifyMix` used to end in `ownerId == "spotify"`, which cannot tell
+         * a Made-For-You mix from an editorial playlist — both are spotify-owned.
+         * On a real account that swept in 66 editorial playlists ("Disco Fever",
+         * "70s Rock Anthems", "This Is <artist>") out of 130 counted mixes, which
+         * is why the Sync tab's mix count bore no relation to what Home showed.
+         * The classifier now rejects the editorial id prefix, but rows already
+         * written stay forever — nothing prunes Spotify DAILY_MIX rows.
+         *
+         * SOFT-hide (`is_active = 0`), never a delete: these are reversible in
+         * exactly the way [PlaylistDao.reactivateById] intends, downloaded files
+         * and track rows are untouched, and a user who actually wants one back
+         * loses nothing. Scoped to DAILY_MIX so a playlist the user genuinely
+         * SAVED (which syncs as CUSTOM) is never in range.
+         */
+        val MIGRATION_39_40 = object : Migration(39, 40) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    UPDATE playlists SET is_active = 0
+                    WHERE source = 'SPOTIFY'
+                      AND type = 'DAILY_MIX'
+                      AND is_active = 1
+                      AND source_id LIKE '37i9dQZF1D%'
+                    """.trimIndent(),
+                )
+            }
+        }
+
         val MIGRATION_38_39 = object : Migration(38, 39) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL(
