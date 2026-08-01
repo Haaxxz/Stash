@@ -128,9 +128,14 @@ class QbdlxCredentialStore @Inject constructor(
     private val loginTokenKey = stringPreferencesKey("login_token")
     private val loginAppIdKey = stringPreferencesKey("login_app_id")
     private val loginAppSecretKey = stringPreferencesKey("login_app_secret")
+    private val loginEmailKey = stringPreferencesKey("login_email")
 
     @Volatile private var cachedLogin: QbdlxLoginCredential? = null
     @Volatile private var loginLoaded = false
+
+    /** The connected account's email, for a "Connected as …" label. Null when none. */
+    suspend fun connectedEmail(): String? =
+        context.qbdlxCredentialsDataStore.data.first()[loginEmailKey]?.takeIf { it.isNotBlank() }
 
     /** The user-connected account, or null. Cached in memory after the first read. */
     suspend fun loginCredential(): QbdlxLoginCredential? {
@@ -147,10 +152,11 @@ class QbdlxCredentialStore @Inject constructor(
     }
 
     /** Persist a connected account (token + the app_id/secret it was minted under). */
-    suspend fun setUserCredential(token: String, appId: String, appSecret: String) {
+    suspend fun setUserCredential(token: String, appId: String, appSecret: String, email: String? = null) {
         recordAlive(token)
         context.qbdlxCredentialsDataStore.edit {
             it[loginTokenKey] = token; it[loginAppIdKey] = appId; it[loginAppSecretKey] = appSecret
+            if (email.isNullOrBlank()) it.remove(loginEmailKey) else it[loginEmailKey] = email
         }
         cachedLogin = QbdlxLoginCredential(token, appId, appSecret)
         loginLoaded = true
@@ -159,7 +165,7 @@ class QbdlxCredentialStore @Inject constructor(
     /** Disconnect the account. */
     suspend fun clearUserCredential() {
         context.qbdlxCredentialsDataStore.edit {
-            it.remove(loginTokenKey); it.remove(loginAppIdKey); it.remove(loginAppSecretKey)
+            it.remove(loginTokenKey); it.remove(loginAppIdKey); it.remove(loginAppSecretKey); it.remove(loginEmailKey)
         }
         cachedLogin = null
         loginLoaded = true

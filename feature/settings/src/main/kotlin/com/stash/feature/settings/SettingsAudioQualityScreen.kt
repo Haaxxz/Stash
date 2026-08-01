@@ -20,6 +20,9 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -33,6 +36,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
@@ -78,6 +83,9 @@ fun SettingsAudioQualityScreen(
     val qbdlxExpired by viewModel.qbdlxExpired.collectAsStateWithLifecycle()
     val qbdlxTokenChoices by viewModel.qbdlxTokenChoices.collectAsStateWithLifecycle()
     val qbdlxPinnedToken by viewModel.qbdlxPinnedToken.collectAsStateWithLifecycle()
+    val qobuzConnectedEmail by viewModel.qobuzConnectedEmail.collectAsStateWithLifecycle()
+    val qobuzConnecting by viewModel.qobuzConnecting.collectAsStateWithLifecycle()
+    val qobuzConnectError by viewModel.qobuzConnectError.collectAsStateWithLifecycle()
 
     SettingsScaffold(title = "Audio & Quality", onBack = onBack, modifier = modifier) {
         // (a) Download tier — only when lossless OFF. The standalone yt-dlp
@@ -155,11 +163,88 @@ fun SettingsAudioQualityScreen(
                                 if (qbdlxExpired) {
                                     Spacer(modifier = Modifier.height(4.dp))
                                     Text(
-                                        text = "No working token — paste a fresh one",
+                                        text = "No working token — connect your account below",
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.error,
                                     )
                                 }
+
+                                // -- Bring your own Qobuz account -------------
+                                // The user's own paid subscription: the one
+                                // credential guaranteed to serve FLAC, since we
+                                // mint + sign its token under a matching app_id.
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Text(
+                                    text = "Your Qobuz account",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                )
+                                val connectedEmail = qobuzConnectedEmail
+                                if (connectedEmail != null) {
+                                    Spacer(modifier = Modifier.height(2.dp))
+                                    Text(
+                                        text = "Connected as $connectedEmail",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.primary,
+                                    )
+                                    TextButton(onClick = viewModel::onDisconnectQobuz) {
+                                        Text("Disconnect")
+                                    }
+                                } else {
+                                    Spacer(modifier = Modifier.height(2.dp))
+                                    Text(
+                                        text = "Sign in with your own Qobuz subscription for " +
+                                            "guaranteed lossless — your account, not the shared pool.",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                    var qobuzEmail by remember { mutableStateOf("") }
+                                    var qobuzPassword by remember { mutableStateOf("") }
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    OutlinedTextField(
+                                        value = qobuzEmail,
+                                        onValueChange = { qobuzEmail = it },
+                                        modifier = Modifier.fillMaxWidth(),
+                                        label = { Text("Qobuz email") },
+                                        singleLine = true,
+                                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
+                                    )
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    OutlinedTextField(
+                                        value = qobuzPassword,
+                                        onValueChange = { qobuzPassword = it },
+                                        modifier = Modifier.fillMaxWidth(),
+                                        label = { Text("Password") },
+                                        singleLine = true,
+                                        visualTransformation = PasswordVisualTransformation(),
+                                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                                    )
+                                    qobuzConnectError?.let { err ->
+                                        Spacer(modifier = Modifier.height(4.dp))
+                                        Text(
+                                            text = err,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.error,
+                                        )
+                                    }
+                                    Spacer(modifier = Modifier.height(6.dp))
+                                    Button(
+                                        onClick = { viewModel.onConnectQobuz(qobuzEmail, qobuzPassword) },
+                                        enabled = !qobuzConnecting,
+                                    ) {
+                                        if (qobuzConnecting) {
+                                            CircularProgressIndicator(
+                                                modifier = Modifier.size(16.dp),
+                                                strokeWidth = 2.dp,
+                                            )
+                                            Spacer(modifier = Modifier.width(8.dp))
+                                            Text("Connecting…")
+                                        } else {
+                                            Text("Connect")
+                                        }
+                                    }
+                                }
+
                                 if (qbdlxTokenChoices.size > 1) {
                                     Spacer(modifier = Modifier.height(4.dp))
                                     Text(

@@ -41,6 +41,8 @@ import com.stash.data.download.lossless.LosslessSourcePreferences
 import com.stash.data.download.lossless.arcod.ArcodCredentialStore
 import com.stash.data.download.lossless.qbdlx.QbdlxCredentialStore
 import com.stash.data.download.lossless.qbdlx.QbdlxTokenChoice
+import com.stash.data.download.lossless.qbdlx.QobuzAccountConnector
+import com.stash.data.download.lossless.qbdlx.QobuzLoginResult
 import com.stash.data.download.lossless.qobuz.QobuzSource
 import com.stash.data.download.prefs.StreamingQualityPreferences
 import com.stash.feature.settings.components.squidCaptchaStatus
@@ -104,6 +106,7 @@ class SettingsViewModel @Inject constructor(
     private val qobuzSource: QobuzSource,
     private val arcodCredentialStore: ArcodCredentialStore,
     private val qbdlxCredentialStore: QbdlxCredentialStore,
+    private val qobuzAccountConnector: QobuzAccountConnector,
     private val likePreferences: LikePreferences,
     private val trackDao: TrackDao,
     private val settingsDeepLinkController: com.stash.core.data.navigation.SettingsDeepLinkController,
@@ -418,6 +421,18 @@ class SettingsViewModel @Inject constructor(
     private val _qbdlxPinnedToken = MutableStateFlow<String?>(null)
     val qbdlxPinnedToken: StateFlow<String?> = _qbdlxPinnedToken
 
+    /** Connected Qobuz account email (null = not connected) — the bring-your-own-account state. */
+    private val _qobuzConnectedEmail = MutableStateFlow<String?>(null)
+    val qobuzConnectedEmail: StateFlow<String?> = _qobuzConnectedEmail
+
+    /** True while a connect attempt is in flight (spinner + disabled button). */
+    private val _qobuzConnecting = MutableStateFlow(false)
+    val qobuzConnecting: StateFlow<Boolean> = _qobuzConnecting
+
+    /** Last connect error to show, or null. Cleared on a new attempt / disconnect. */
+    private val _qobuzConnectError = MutableStateFlow<String?>(null)
+    val qobuzConnectError: StateFlow<String?> = _qobuzConnectError
+
     init {
         // Refresh on construction so the Diagnostics card shows the
         // correct enabled/disabled state on first frame. Cheap (a
@@ -427,6 +442,7 @@ class SettingsViewModel @Inject constructor(
         refreshDiagnostics()
         refreshQbdlxExpired()
         refreshQbdlxTokens()
+        refreshQobuzConnected()
     }
 
     /**
@@ -1340,6 +1356,49 @@ class SettingsViewModel @Inject constructor(
             qbdlxCredentialStore.setPinnedToken(token)
             _qbdlxPinnedToken.value = qbdlxCredentialStore.pinnedToken()
             _qbdlxTokenChoices.value = qbdlxCredentialStore.poolForPicker()
+        }
+    }
+
+    private fun refreshQobuzConnected() {
+        viewModelScope.launch { _qobuzConnectedEmail.value = qobuzAccountConnector.connectedEmail() }
+    }
+
+    /**
+     * Connect the user's own Qobuz account (bring-your-own-account): logs in,
+     * and on success the token is stored with its signing pair so it serves real
+     * FLAC. Maps each failure to a message; never surfaces the password.
+     */
+    fun onConnectQobuz(email: String, password: String) {
+        if (email.isBlank() || password.isBlank()) {
+            _qobuzConnectError.value = "Enter your Qobuz email and password."
+            return
+        }
+        viewModelScope.launch {
+            _qobuzConnecting.value = true
+            _qobuzConnectError.value = null
+            when (qobuzAccountConnector.connect(email, password)) {
+                is QobuzLoginResult.Success -> {
+                    _qobuzConnectedEmail.value = qobuzAccountConnector.connectedEmail()
+                    _qbdlxExpired.value = qbdlxCredentialStore.allDead()
+                }
+                QobuzLoginResult.InvalidCredentials ->
+                    _qobuzConnectError.value = "Wrong email or password."
+                QobuzLoginResult.FreeAccount ->
+                    _qobuzConnectError.value = "That account has no lossless subscription — Qobuz only serves FLAC to paid plans."
+                QobuzLoginResult.Error ->
+                    _qobuzConnectError.value = "Couldn't reach Qobuz. Check your connection and try again."
+            }
+            _qobuzConnecting.value = false
+        }
+    }
+
+    /** Disconnect the connected Qobuz account. */
+    fun onDisconnectQobuz() {
+        viewModelScope.launch {
+            qobuzAccountConnector.disconnect()
+            _qobuzConnectedEmail.value = null
+            _qobuzConnectError.value = null
+            _qbdlxExpired.value = qbdlxCredentialStore.allDead()
         }
     }
 
