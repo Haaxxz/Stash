@@ -192,6 +192,12 @@ jobs:
           # an APK missing these.
           QBDLX_APP_ID: ${{ secrets.QBDLX_APP_ID }}
           QBDLX_APP_SECRET: ${{ secrets.QBDLX_APP_SECRET }}
+          # Extra "appId:secret,…" pairs for pool tokens minted under a second
+          # Qobuz app_id. Without this the shipped APK can't sign those tokens and
+          # drops them (the pre-v0.9.89 behaviour) — so the multi-credential pool
+          # quietly reverts to one app_id. Optional (empty = primary only), but
+          # set it or #1's extra capacity never reaches users.
+          QBDLX_APP_SECRETS: ${{ secrets.QBDLX_APP_SECRETS }}
         run: ./gradlew :app:assembleRelease --no-daemon
 
       - name: Locate release APK
