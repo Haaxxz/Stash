@@ -112,11 +112,19 @@ class StreamSourceRegistry @Inject constructor(
                 // playlist would spend a search call + the user's arcod account
                 // on every queue track speculatively, not just the ones played.
                 if (allowYtDlp) add("arcod" to arcod::resolve)
-            } else if (streamingPreference.isForceAmzOnly()) {
-                // Test toggle (outage drill): amz ONLY — kennyy/squid/youtube
-                // removed from play so a track either streams via amz or fails
-                // visibly. Ignores allowYouTube/allowYtDlp — it's amz or nothing.
-                add("amz" to amz::resolve)
+                // NOTE: the force-amz branch is deliberately gone (2026-07-31).
+                //
+                // amz is parked, and its Settings toggle was removed with it — but a
+                // user who had already switched it on still has `force_amz_only = true`
+                // sitting in DataStore, with no UI left to switch it off. Had this
+                // branch survived, those users would route every track through a
+                // parked source and get silence, permanently, with no way out.
+                //
+                // Parking a source therefore has to mean parking its force branch in
+                // the same change. This is the exact failure shape that took a full
+                // debugging session when force-YouTube was left enabled in a release
+                // install: a stale preference quietly disabling lossless. The pref key
+                // and StreamingPreference accessor stay for re-enablement.
             } else if (streamingPreference.isForceYouTubeFallback()) {
                 // Test toggle: skip the lossless sources, forcing the
                 // YouTube fallback path. Still gated by allowYouTube so the
