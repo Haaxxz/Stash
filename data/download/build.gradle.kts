@@ -27,6 +27,12 @@ val arcodLocalProperties = Properties().apply {
 }
 val arcodStreamBase: String =
     arcodLocalProperties.getProperty("arcod.streamBase") ?: System.getenv("ARCOD_STREAM_BASE").orEmpty()
+// Private integration key for ARCOD's /v2/stash routes (per build, sent as the
+// X-Stash-Key header). Rotated by the operator (Fufu) — keep it out of source,
+// inject from local.properties / the ARCOD_STASH_KEY CI secret. Empty = ARCOD
+// /v2/stash calls 403 and the source fails over.
+val arcodStashKey: String =
+    arcodLocalProperties.getProperty("arcod.stashKey") ?: System.getenv("ARCOD_STASH_KEY").orEmpty()
 
 // ── qbdlx (direct-Qobuz) credentials + token pool ──────────────────────────
 // Bundled at build time from local.properties / env. APP_ID + APP_SECRET are
@@ -89,6 +95,10 @@ android {
         // env at build time so it never lives in the public repo. Empty when
         // unconfigured — ARCOD streaming then no-ops and the registry fails over.
         buildConfigField("String", "ARCOD_STREAM_BASE", "\"$arcodStreamBase\"")
+        buildConfigField("String", "ARCOD_STASH_KEY", "\"$arcodStashKey\"")
+        // Public host root for ARCOD's /v2/stash routes (Fufu published it openly;
+        // only X-Stash-Key is private). Hardcoded, not injected.
+        buildConfigField("String", "ARCOD_API_BASE", "\"https://api.arcod.xyz\"")
         buildConfigField("String", "QBDLX_APP_ID", "\"$qbdlxAppId\"")
         buildConfigField("String", "QBDLX_APP_SECRET", "\"$qbdlxAppSecret\"")
         buildConfigField("String", "QBDLX_APP_SECRETS", "\"$qbdlxAppSecrets\"")
