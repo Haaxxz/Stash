@@ -21,6 +21,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Block
 import androidx.compose.material.icons.filled.ErrorOutline
+import androidx.compose.material.icons.filled.Restore
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.FilterChip
@@ -78,6 +79,10 @@ fun SyncScreen(
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val blockedCount by viewModel.blockedCount.collectAsStateWithLifecycle()
     val failedDownloadsCount by viewModel.failedDownloadsCount.collectAsStateWithLifecycle()
+    val undoPoint by viewModel.undoPoint.collectAsStateWithLifecycle()
+    val undoInProgress by viewModel.undoInProgress.collectAsStateWithLifecycle()
+    val undoResult by viewModel.undoResult.collectAsStateWithLifecycle()
+    var confirmUndo by remember { mutableStateOf(false) }
     val authState by viewModel.authExpiry.collectAsStateWithLifecycle()
     val streamingMode by viewModel.streamingEnabled.collectAsStateWithLifecycle()
 
@@ -172,6 +177,20 @@ fun SyncScreen(
                 FailedDownloadsCard(
                     count = failedDownloadsCount,
                     onClick = onNavigateToFailedDownloads,
+                )
+            }
+        }
+
+        // -- Undo last sync ---------------------------------------------------
+        // Only present when a restore point exists. Sits directly under the sync
+        // status so the fix is next to the thing that broke.
+        undoPoint?.let { point ->
+            item(key = "undo_sync") {
+                UndoSyncCard(
+                    playlistCount = point.playlistCount,
+                    capturedAtEpochMs = point.createdAtEpochMs,
+                    inProgress = undoInProgress,
+                    onUndo = { confirmUndo = true },
                 )
             }
         }
@@ -335,6 +354,51 @@ fun SyncScreen(
             },
             dismissButton = {
                 TextButton(onClick = viewModel::cancelRefreshMode) { Text("Cancel") }
+            },
+        )
+    }
+
+    // Undo-confirm dialog. Same top-level placement rule as above. Undo rewrites
+    // library state, so it asks first — and says plainly what it will and won't
+    // put back, since "undo" invites the assumption that it reverses everything.
+    if (confirmUndo) {
+        val point = undoPoint
+        AlertDialog(
+            onDismissRequest = { confirmUndo = false },
+            title = { Text("Undo last sync?") },
+            text = {
+                Text(
+                    "Your library goes back to how it was before the last sync: " +
+                        "playlists it hid come back, and playlists it emptied are refilled " +
+                        "in their original order" +
+                        (point?.let { " (${it.playlistCount} playlists)." } ?: ".") +
+                        "\n\nTracks you added yourself are kept. Downloaded files that were " +
+                        "already deleted can't be brought back."
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        confirmUndo = false
+                        viewModel.onUndoLastSync()
+                    },
+                ) { Text("Undo sync") }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmUndo = false }) { Text("Cancel") }
+            },
+        )
+    }
+
+    // Outcome of an undo, acknowledged explicitly: an undo silently changing the
+    // library underneath the user is exactly the feeling this feature exists to fix.
+    undoResult?.let { message ->
+        AlertDialog(
+            onDismissRequest = viewModel::onUndoResultShown,
+            title = { Text("Sync undone") },
+            text = { Text(message) },
+            confirmButton = {
+                TextButton(onClick = viewModel::onUndoResultShown) { Text("OK") }
             },
         )
     }
@@ -643,6 +707,70 @@ private fun FailedDownloadsCard(
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.size(20.dp),
             )
+        }
+    }
+}
+
+/**
+ * "Undo last sync" — puts the library back to the moment before the last sync
+ * ran: playlists it hid return, playlists it emptied are refilled.
+ *
+ * Only rendered when a restore point exists, so the control never sits there
+ * unable to do anything. Deliberately understated (no alarm colour): it's a
+ * safety net, not an error — the loud version would imply every sync went wrong.
+ */
+@Composable
+private fun UndoSyncCard(
+    playlistCount: Int,
+    capturedAtEpochMs: Long,
+    inProgress: Boolean,
+    onUndo: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val extendedColors = StashTheme.extendedColors
+    val when_ = remember(capturedAtEpochMs) {
+        val ageMs = System.currentTimeMillis() - capturedAtEpochMs
+        val mins = (ageMs / 60_000L).coerceAtLeast(0)
+        when {
+            mins < 1 -> "just now"
+            mins < 60 -> "$mins min ago"
+            mins < 60 * 24 -> "${mins / 60} hr ago"
+            else -> "${mins / (60 * 24)} day${if (mins / (60 * 24) != 1L) "s" else ""} ago"
+        }
+    }
+
+    Surface(
+        modifier = modifier.fillMaxWidth(),
+        color = extendedColors.glassBackground,
+        shape = RoundedCornerShape(16.dp),
+        border = BorderStroke(1.dp, extendedColors.glassBorder),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Icon(
+                imageVector = Icons.Filled.Restore,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(24.dp),
+            )
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "Undo last sync",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+                Text(
+                    text = "Restores $playlistCount playlists to how they were $when_",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            TextButton(onClick = onUndo, enabled = !inProgress) {
+                Text(if (inProgress) "Undoing…" else "Undo")
+            }
         }
     }
 }

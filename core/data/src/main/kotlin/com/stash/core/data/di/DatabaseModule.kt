@@ -143,4 +143,8 @@ object DatabaseModule {
     @Provides
     fun provideListenSubmissionDao(db: StashDatabase): com.stash.core.data.db.dao.ListenSubmissionDao =
         db.listenSubmissionDao()
+
+    @Provides
+    fun provideSyncUndoDao(db: StashDatabase): com.stash.core.data.db.dao.SyncUndoDao =
+        db.syncUndoDao()
 }
