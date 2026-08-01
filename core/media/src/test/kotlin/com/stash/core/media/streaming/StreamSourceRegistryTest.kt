@@ -113,19 +113,19 @@ class StreamSourceRegistryTest {
         coEvery { streamingPreference.isForceYouTubeFallback() } returns false
         coEvery { amz.resolve(any()) } returns null
         coEvery { qbdlx.resolve(any()) } returns null
+        coEvery { arcod.resolve(any()) } returns null
         coEvery { youtube.resolve(any(), any()) } returns null
         val track = stubTrack()
 
         registry().resolve(track, allowYouTube = true)
 
-        // Only the qbdlx leg is build-gated; the chain is qbdlx -> youtube now.
+        // Chain is qbdlx -> arcod -> youtube; the two lossless legs are build-gated.
         if (BuildConfig.QBDLX_CONFIGURED) coVerify { qbdlx.resolve(track) }
+        if (BuildConfig.ARCOD_CONFIGURED) coVerify { arcod.resolve(track) }
         coVerify { youtube.resolve(track, allowYtDlp = true) }
-        // All parked as of 2026-07-30 — qbdlx is the only lossless provider, so a
-        // miss goes straight to YouTube rather than waiting on sources that cannot
-        // succeed.
+        // amz/kennyy/qobuz remain parked — a miss must not wait on sources that
+        // cannot succeed (~4.8s of a 5.2s resolve, measured on device).
         coVerify(exactly = 0) { amz.resolve(any()) }
-        coVerify(exactly = 0) { arcod.resolve(any()) }
         coVerify(exactly = 0) { kennyy.resolve(any()) }
         coVerify(exactly = 0) { qobuz.resolve(any()) }
     }
@@ -164,9 +164,10 @@ class StreamSourceRegistryTest {
      * wait on sources that could not succeed — ~4.8s of a 5.2s resolve, measured
      * on device.
      *
-     * This asserts they are never consulted, which is the inverse of what this
-     * test checked before. The resolvers, their force-toggles and their own tests
-     * all remain, so re-enabling either is uncommenting one line in the registry.
+     * amz is still parked and must never be consulted. arcod was UNPARKED
+     * 2026-08-01 (operator rotated the key + moved us to /v2/stash; verified live),
+     * so it IS expected in the chain on a keyed build — this test pins both halves
+     * at once: amz absent, arcod present.
      */
     /**
      * A force toggle must never be able to strand a user with no audio.
@@ -199,10 +200,13 @@ class StreamSourceRegistryTest {
     }
 
     @Test
-    fun resolve_skips_parked_amz_and_arcod() = runTest {
+    fun resolve_skips_parked_amz_but_consults_arcod() = runTest {
         coEvery { streamingPreference.isForceAmzOnly() } returns false
         coEvery { streamingPreference.isForceYouTubeFallback() } returns false
         coEvery { qbdlx.resolve(any()) } returns null
+        // arcod UNPARKED 2026-08-01 — it misses here so the chain still reaches
+        // YouTube, which keeps the amz assertion below meaningful.
+        coEvery { arcod.resolve(any()) } returns null
         // amz is stubbed to SUCCEED on purpose: if it were still in the chain it
         // would serve this resolve, so "youtube served instead" is proof it was
         // skipped rather than merely absent from the fixture.
@@ -224,8 +228,9 @@ class StreamSourceRegistryTest {
 
         assertThat(result!!.origin).isEqualTo(YouTubeStreamResolver.ORIGIN)
         if (BuildConfig.QBDLX_CONFIGURED) coVerify { qbdlx.resolve(track) }
+        // arcod is build-gated like qbdlx: only a keyed build can reach it.
+        if (BuildConfig.ARCOD_CONFIGURED) coVerify { arcod.resolve(track) }
         coVerify(exactly = 0) { amz.resolve(any()) }
-        coVerify(exactly = 0) { arcod.resolve(any()) }
         coVerify(exactly = 0) { kennyy.resolve(any()) }
         coVerify(exactly = 0) { qobuz.resolve(any()) }
     }

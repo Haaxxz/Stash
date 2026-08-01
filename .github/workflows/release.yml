@@ -182,6 +182,10 @@ jobs:
           # streaming simply no-ops and the registry fails over — so this MUST
           # be set for shipped APKs to stream via ARCOD.
           ARCOD_STREAM_BASE: ${{ secrets.ARCOD_STREAM_BASE }}
+          # Private integration key for ARCOD's /v2/stash routes. This is now what
+          # ARCOD_CONFIGURED keys off: without it the shipped APK can only 403 and
+          # both registries skip arcod entirely.
+          ARCOD_STASH_KEY: ${{ secrets.ARCOD_STASH_KEY }}
           # qbdlx (direct-Qobuz) app credentials, consumed by data/download
           # BuildConfig (QBDLX_*). These MUST be set: without them the shipped
           # APK has blank credentials and qbdlx is dead on arrival — exactly what

@@ -174,12 +174,23 @@ class StreamSourceRegistry @Inject constructor(
                 // yt-dlp extraction itself. Removing them is a larger win than the
                 // extraction fix that preceded it.
                 //
-                // arcod was ALREADY parked on the download side
-                // (LosslessSourceRegistry.PARKED_SOURCE_IDS); this brings streaming
-                // in line. Re-enabling either is uncommenting its block — the
-                // resolvers, their force-toggles, and their tests all stay.
+                // amz stays parked (client-side decrypt, no working operator).
                 // add("amz" to amz::resolve)
-                // add("arcod" to arcod::resolve)
+                //
+                // arcod UNPARKED 2026-08-01: the operator rotated the integration
+                // key and moved us to /v2/stash — verified live (stream returns
+                // audio/flac, fLaC-magic byte-checked). Sits AFTER qbdlx (qbdlx is
+                // plain Range-seekable FLAC with no per-user login) and before the
+                // lossy YouTube fallback, so a track qbdlx misses can still play
+                // lossless for anyone who connected an ARCOD account.
+                //
+                // Foreground/next-up only (allowYtDlp), like qbdlx: it spends the
+                // user's own arcod quota, so the speculative background fill must
+                // not touch it. Also build-gated — an APK without the private key
+                // can only 403, so skipping it avoids a guaranteed-wasted round trip.
+                if (allowYtDlp && BuildConfig.ARCOD_CONFIGURED) {
+                    add("arcod" to arcod::resolve)
+                }
                 if (allowYouTube) add("youtube" to { t: TrackEntity -> youtube.resolve(t, allowYtDlp) })
             }
         }

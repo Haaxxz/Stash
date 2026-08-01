@@ -85,7 +85,11 @@ val qbdlxTokenPoolEnc = encryptPool(qbdlxTokenPool)
 val qbdlxPoolFp = poolFp(qbdlxTokenPool)
 
 val qbdlxConfigured = qbdlxAppId.isNotBlank() && qbdlxAppSecret.isNotBlank() && qbdlxTokenPool.isNotBlank()
-val arcodConfigured = arcodStreamBase.isNotBlank()
+// What makes an ARCOD build usable is the /v2/stash integration key — the old
+// private stream base is no longer the gate (those routes were retired when the
+// operator moved Stash to /v2/stash). Keyless build → arcod can only 403, so the
+// registries skip it entirely.
+val arcodConfigured = arcodStashKey.isNotBlank()
 
 android {
     namespace = "com.stash.data.download"
