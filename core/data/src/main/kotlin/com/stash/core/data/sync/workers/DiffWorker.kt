@@ -222,11 +222,16 @@ class DiffWorker @AssistedInject constructor(
             val youtubeSourceIds = playlistSnapshots
                 .filter { it.source == MusicSource.YOUTUBE }
                 .map { it.sourcePlaylistId }
-            // #post-343: mirrors the Spotify inventoryComplete guard — never treat a
-            // PARTIAL YouTube fetch (one failed sub-leg: home mixes / liked songs /
-            // a specific playlist's tracks) as "these other playlists are gone."
-            // A single flaky call used to hide the user's entire YouTube library.
-            if (youtubeSourceIds.isNotEmpty() && youtubeInventoryComplete) {
+            // Gated by the SAME predicate Spotify uses — REFRESH *and* a complete
+            // inventory. This previously checked only the inventory half, so an
+            // ACCUMULATE sync still hid YouTube playlists that the run didn't
+            // return, including user-created ones: the mode that promises "never
+            // remove anything" was quietly removing things. Spotify honoured the
+            // mode, YouTube didn't, which is why a sync could gain Spotify
+            // playlists and lose YouTube ones in the same pass.
+            if (youtubeSourceIds.isNotEmpty() &&
+                shouldDeactivateMissingPlaylists(youtubeSyncMode, youtubeInventoryComplete)
+            ) {
                 val hidden = playlistDao.deactivateMissingForSource(
                     source = MusicSource.YOUTUBE,
                     currentSourceIds = youtubeSourceIds,
@@ -235,7 +240,11 @@ class DiffWorker @AssistedInject constructor(
                     Log.i(TAG, "Deactivated $hidden stale YouTube playlist(s)")
                 }
             } else if (youtubeSourceIds.isNotEmpty()) {
-                Log.w(TAG, "Skipping stale-YouTube-playlist deactivation — this sync's inventory was incomplete")
+                Log.i(
+                    TAG,
+                    "Skipping stale-YouTube-playlist deactivation " +
+                        "(mode=$youtubeSyncMode inventoryComplete=$youtubeInventoryComplete)",
+                )
             }
 
             // Clean up orphaned tracks whose playlists were refreshed and

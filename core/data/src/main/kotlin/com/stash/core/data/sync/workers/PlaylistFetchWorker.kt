@@ -61,7 +61,20 @@ internal fun likedPlaylistArtUrl(trackArtUrls: Sequence<String?>): String? =
         trackArtUrls.firstOrNull { !it.isNullOrBlank() }
     )
 
-internal fun shouldDeactivateMissingSpotifyPlaylists(
+/**
+ * Whether a sync may soft-hide playlists that the remote didn't return this run.
+ *
+ * BOTH conditions are required, and each guards a real data-loss bug:
+ *  - `REFRESH` — ACCUMULATE's whole promise is "never remove anything". Hiding a
+ *    playlist the user still has is a removal from their point of view.
+ *  - `inventoryComplete` — a partial fetch (one failed leg) must never be read as
+ *    "the rest are gone" (#343/#348).
+ *
+ * Applies to EVERY source. It was originally Spotify-only, and YouTube open-coded
+ * just the inventory half — so an ACCUMULATE sync still hid YouTube playlists,
+ * including user-created ones. Keep both sources on this one predicate.
+ */
+internal fun shouldDeactivateMissingPlaylists(
     syncMode: SyncMode,
     inventoryComplete: Boolean,
 ): Boolean = syncMode == SyncMode.REFRESH && inventoryComplete
@@ -694,7 +707,7 @@ class PlaylistFetchWorker @AssistedInject constructor(
                 reportPlaylistFetched()
             }
 
-            if (shouldDeactivateMissingSpotifyPlaylists(syncPreferencesManager.spotifySyncMode.first(), inventoryComplete)) {
+            if (shouldDeactivateMissingPlaylists(syncPreferencesManager.spotifySyncMode.first(), inventoryComplete)) {
                 val currentIds = customPlaylists.map { it.id }
                 val hidden = playlistDao.deactivateMissingSpotifyCustomPlaylists(
                     currentSourceIds = currentIds,
