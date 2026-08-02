@@ -112,6 +112,18 @@ class StreamSourceRegistry @Inject constructor(
                 // playlist would spend a search call + the user's arcod account
                 // on every queue track speculatively, not just the ones played.
                 if (allowYtDlp) add("arcod" to arcod::resolve)
+                // ...and YouTube stays available behind it. A force toggle is a
+                // TEST instrument, but the pref outlives the build that showed it:
+                // arcod is parked here, so a stale `force_arcod_only = true` used to
+                // mean every track resolved through a dead source with no fallback
+                // and no UI left to switch it off — silence, permanently. That is
+                // the amz failure below, recreated.
+                //
+                // Keeping the fallback costs the toggle a little of its "fails
+                // visibly" sharpness and buys back the guarantee that no
+                // preference, however stale, can leave a user unable to play music.
+                // That trade is not close.
+                if (allowYouTube) add("youtube" to { t: TrackEntity -> youtube.resolve(t, allowYtDlp) })
                 // NOTE: the force-amz branch is deliberately gone (2026-07-31).
                 //
                 // amz is parked, and its Settings toggle was removed with it — but a

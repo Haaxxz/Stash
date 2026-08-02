@@ -168,6 +168,36 @@ class StreamSourceRegistryTest {
      * test checked before. The resolvers, their force-toggles and their own tests
      * all remain, so re-enabling either is uncommenting one line in the registry.
      */
+    /**
+     * A force toggle must never be able to strand a user with no audio.
+     *
+     * The pref outlives the build that exposed the switch: arcod is parked here,
+     * and its debug toggle isn't in this build at all, yet `force_arcod_only`
+     * can still be true in DataStore with no UI to clear it. Before this, that
+     * meant every track resolved through a parked source with no fallback —
+     * silence, permanently. YouTube stays in the chain so the worst case is
+     * lossy playback, never none.
+     */
+    @Test
+    fun forceArcod_still_falls_back_to_youtube_when_arcod_misses() = runTest {
+        coEvery { streamingPreference.isForceQbdlxOnly() } returns false
+        coEvery { streamingPreference.isForceArcodOnly() } returns true
+        coEvery { streamingPreference.isForceYouTubeFallback() } returns false
+        coEvery { arcod.resolve(any()) } returns null   // parked / dead endpoint
+        coEvery { youtube.resolve(any(), any()) } returns StreamUrl(
+            url = "https://yt/x",
+            expiresAtMs = Long.MAX_VALUE,
+            codec = "aac",
+            origin = YouTubeStreamResolver.ORIGIN,
+        )
+        val track = stubTrack()
+
+        val result = registry().resolve(track, allowYouTube = true)
+
+        assertThat(result).isNotNull()
+        assertThat(result!!.origin).isEqualTo(YouTubeStreamResolver.ORIGIN)
+    }
+
     @Test
     fun resolve_skips_parked_amz_and_arcod() = runTest {
         coEvery { streamingPreference.isForceAmzOnly() } returns false
