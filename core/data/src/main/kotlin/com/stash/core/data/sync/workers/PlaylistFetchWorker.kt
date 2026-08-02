@@ -394,7 +394,28 @@ class PlaylistFetchWorker @AssistedInject constructor(
         } else try {
             when (val result = spotifyApiClient.getDailyMixes()) {
                 is SyncResult.Success -> {
-                    val dailyMixes = result.data
+                    // Fold in the yearly recaps ("Your Top Songs 2024", "Your
+                    // All-Time Top Songs"). They only appear on the home feed for
+                    // a few weeks each December, so without this a sync in any
+                    // other month can never find them — the long-standing "why
+                    // don't we pull yearly mixes" gap.
+                    //
+                    // Additive and best-effort: anything but Success is ignored,
+                    // so a change on Spotify's side costs these extra playlists,
+                    // never the mixes the home feed already found.
+                    val yearly = when (val y = spotifyApiClient.getYearlyMixes()) {
+                        is SyncResult.Success -> y.data
+                        else -> emptyList()
+                    }
+                    val seenIds = result.data.mapTo(mutableSetOf()) { it.id }
+                    val extraYearly = yearly.filter { seenIds.add(it.id) }
+                    if (extraYearly.isNotEmpty()) {
+                        Log.d(TAG, "fetchSpotifyPlaylists: +${extraYearly.size} yearly recap(s)")
+                        syncLog.success(
+                            "Your recaps — " + extraYearly.joinToString(", ") { it.name },
+                        )
+                    }
+                    val dailyMixes = result.data + extraYearly
                     diagnostics.add(SyncStepResult("SPOTIFY", "getDailyMixes", StepStatus.SUCCESS, dailyMixes.size))
                     Log.d(TAG, "fetchSpotifyPlaylists: found ${dailyMixes.size} daily mixes")
 
