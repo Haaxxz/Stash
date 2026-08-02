@@ -413,12 +413,25 @@ class LibraryViewModel @Inject constructor(
      * at the position of [track].
      */
     fun playTrack(track: Track, allTracks: List<Track>) {
-        if (track.filePath == null) return // not downloaded yet
         viewModelScope.launch {
-            val downloadedTracks = allTracks.filter { it.filePath != null }
-            val index = downloadedTracks.indexOfFirst { it.id == track.id }
-            if (index < 0) return@launch // shouldn't happen, but guard against it
-            playerRepository.setQueue(downloadedTracks, index)
+            // Offline-aware, matching playLiked. The old version returned early
+            // for any track without a filePath — correct back when every surface
+            // feeding it was downloads-only, but silently dead once "Recently
+            // added" started showing streamable tracks: they appeared, and tapping
+            // them did nothing at all.
+            val online = streamingPreference.current()
+            if (!online && track.filePath == null) return@launch
+            val playable = if (online) allTracks else allTracks.filter { it.filePath != null }
+            val index = playable.indexOfFirst { it.id == track.id }
+            if (index >= 0) {
+                playerRepository.setQueue(playable, index)
+            } else {
+                // The tapped track isn't in the surrounding list (the Recently
+                // Added rail is its own query, so a streamable track can be absent
+                // from the Songs list). Play it on its own rather than no-op — a
+                // tap that does nothing is the bug being fixed here.
+                playerRepository.setQueue(listOf(track), 0)
+            }
         }
     }
 

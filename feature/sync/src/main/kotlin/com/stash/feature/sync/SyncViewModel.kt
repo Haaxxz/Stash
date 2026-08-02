@@ -144,7 +144,7 @@ data class SyncUiState(
     // -- Hero card: last-sync metadata ----------------------------------------
     /** Relative time string for the most recent sync, e.g. "2 hours ago". Empty if never synced. */
     val lastSyncRelativeTime: String = "",
-    /** Tracks downloaded in the most recent sync, or null if never synced. */
+    /** New tracks the most recent sync added, or null if never synced. */
     val lastSyncTrackCount: Int? = null,
     /** Short health label: "✓ healthy", "! partial", "× failed", or "". */
     val lastSyncHealthLabel: String = "",
@@ -659,7 +659,13 @@ class SyncViewModel @Inject constructor(
                 _uiState.update { state ->
                     state.copy(
                         lastSyncRelativeTime = relativeTime,
-                        lastSyncTrackCount = latest?.tracksDownloaded,
+                        // What the sync FOUND, not what it downloaded. In Online
+                        // mode nothing downloads, so tracksDownloaded is always 0
+                        // and the headline read "0 tracks" after a run that added
+                        // 159 songs. newTracksFound is the honest answer in both
+                        // modes — Offline downloads them, Online streams them, but
+                        // either way they are new music in the library.
+                        lastSyncTrackCount = latest?.newTracksFound,
                         lastSyncHealthLabel = healthLabel,
                         lastSyncHealthColor = healthColor,
                     )
