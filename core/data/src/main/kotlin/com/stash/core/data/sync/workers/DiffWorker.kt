@@ -101,6 +101,8 @@ class DiffWorker @AssistedInject constructor(
         const val KEY_NEW_TRACKS = "new_tracks"
         const val KEY_PLAYLISTS_CHECKED = "playlists_checked"
         private const val TAG = "DiffWorker"
+        /** How many new songs to name before collapsing to "+N more". */
+        private const val NEW_TRACKS_NAMED = 3
         private const val NEVER_MATCH_SENTINEL = "\u0000__stash_never_match__"
     }
 
@@ -148,7 +150,6 @@ class DiffWorker @AssistedInject constructor(
             // this run, which is exactly where they were before the feature.
             runCatching {
                 syncUndoDao.capture(syncId, System.currentTimeMillis())
-                syncLog.info("Saved a restore point — this sync can be undone")
             }.onFailure { e ->
                 if (e is kotlin.coroutines.cancellation.CancellationException) throw e
                 Log.w(TAG, "Undo restore point capture failed for sync $syncId", e)
@@ -236,9 +237,6 @@ class DiffWorker @AssistedInject constructor(
                     )
                 }
                 newTrackCount += playlistNewTracks
-                if (playlistNewTracks > 0) {
-                    syncLog.success("${playlistSnapshot.playlistName} — $playlistNewTracks new track(s)")
-                }
                 playlistsDiffed++
                 syncStateManager.onDiffing(playlistsDiffed, playlistSnapshots.size)
             }
@@ -255,6 +253,16 @@ class DiffWorker @AssistedInject constructor(
             val youtubeSourceIds = playlistSnapshots
                 .filter { it.source == MusicSource.YOUTUBE }
                 .map { it.sourcePlaylistId }
+            // Close with the answer to "what did this sync actually get me?".
+            // Saying "no new music" outright matters as much as listing finds: a
+            // sync that changed nothing should look different from one that
+            // failed, and previously both just stopped.
+            if (newTrackCount > 0) {
+                syncLog.success("$newTrackCount new song${if (newTrackCount == 1) "" else "s"} added")
+            } else {
+                syncLog.info("No new music this time — everything already in your library")
+            }
+
             // Gated by the SAME predicate Spotify uses — REFRESH *and* a complete
             // inventory. This previously checked only the inventory half, so an
             // ACCUMULATE sync still hid YouTube playlists that the run didn't
@@ -388,6 +396,10 @@ class DiffWorker @AssistedInject constructor(
             syncEnabled = defaultSyncEnabled(snapshot.playlistType, streamingMode),
         )
         val id = playlistDao.insert(newPlaylist)
+        // A playlist or mix that wasn't here before is news — arguably the most
+        // interesting thing a sync can report, and previously invisible.
+        val kind = if (snapshot.playlistType == PlaylistType.DAILY_MIX) "mix" else "playlist"
+        syncLog.success("New $kind: ${snapshot.playlistName}")
         return newPlaylist.copy(id = id)
     }
 
@@ -659,6 +671,18 @@ class DiffWorker @AssistedInject constructor(
             }
         }
         val newTrackCount = newTracks.size
+        // Name what actually arrived. A count ("3 new tracks") still leaves the
+        // user hunting for which three — the whole complaint about sync being a
+        // dead end. These are tracks NEW TO THE LIBRARY, so it is genuinely music
+        // they have not had before, not a reshuffle.
+        if (newTracks.isNotEmpty()) {
+            val named = newTracks.take(NEW_TRACKS_NAMED)
+                .joinToString(", ") { "${it.entity.artist} - ${it.entity.title}" }
+            val more = (newTracks.size - NEW_TRACKS_NAMED).coerceAtLeast(0)
+            syncLog.success(
+                "${playlistSnapshot.playlistName}: $named" + if (more > 0) ", +$more more" else ""
+            )
+        }
 
         // ── Existing-track path: membership + enrichment ─────────────────
         // Enrichment writes (youtubeId backfill, art refresh, auto-

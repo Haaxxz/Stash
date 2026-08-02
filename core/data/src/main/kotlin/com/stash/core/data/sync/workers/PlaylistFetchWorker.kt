@@ -233,7 +233,7 @@ class PlaylistFetchWorker @AssistedInject constructor(
         // Starts a fresh terminal for this run. Previous lines are cleared here
         // rather than at the end, so the last run stays readable until a new one
         // begins — reading it AFTER the fact is the point.
-        syncLog.beginRun("Starting sync…")
+        syncLog.beginRun("Looking for new music…")
 
         try {
             // Step 2: Authenticating phase.
@@ -397,9 +397,6 @@ class PlaylistFetchWorker @AssistedInject constructor(
                     val dailyMixes = result.data
                     diagnostics.add(SyncStepResult("SPOTIFY", "getDailyMixes", StepStatus.SUCCESS, dailyMixes.size))
                     Log.d(TAG, "fetchSpotifyPlaylists: found ${dailyMixes.size} daily mixes")
-                    syncLog.info("Spotify home feed — ${dailyMixes.size} mixes: " +
-                        dailyMixes.take(6).joinToString(", ") { it.name } +
-                        if (dailyMixes.size > 6) ", +${dailyMixes.size - 6} more" else "")
 
                     for (mix in dailyMixes) {
                         homeFeedMixIds += mix.id
@@ -706,7 +703,6 @@ class PlaylistFetchWorker @AssistedInject constructor(
                     if (!fetchFailed) {
                         userPlaylistCount++
                         Log.d(TAG, "fetchSpotifyPlaylists: '${playlist.name}' — ${trackSnapshots.size} tracks")
-                        syncLog.success("${playlist.name} — ${trackSnapshots.size} tracks")
                     }
                 } catch (e: Exception) {
                     if (e is CancellationException) throw e

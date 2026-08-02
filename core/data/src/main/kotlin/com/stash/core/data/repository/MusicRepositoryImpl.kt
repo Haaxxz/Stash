@@ -288,6 +288,10 @@ class MusicRepositoryImpl @Inject constructor(
     override fun getRecentlyAdded(limit: Int): Flow<List<Track>> =
         trackDao.getRecentlyAdded(limit).map { entities -> entities.map { it.toDomain() } }
 
+    override fun getRecentlyAddedIncludingStreamable(limit: Int): Flow<List<Track>> =
+        trackDao.getRecentlyAddedIncludingStreamable(limit)
+            .map { entities -> entities.map { it.toDomain() } }
+
     override fun getMostPlayed(limit: Int): Flow<List<Track>> =
         trackDao.getMostPlayed(limit).map { entities -> entities.map { it.toDomain() } }
 

@@ -157,7 +157,18 @@ class LibraryViewModel @Inject constructor(
      */
     private val libraryDataFlow = combine(
         musicRepository.getAllPlaylists(),
-        musicRepository.getRecentlyAdded(20),
+        // Which "recent" is honest depends on the mode.
+        //
+        // Offline: only downloaded tracks can play, so showing anything else
+        // would be a row of dead taps.
+        // Online: a sync downloads nothing, so the downloaded-only query stays
+        // empty however much new music arrives — the reason new finds were
+        // invisible and users had to go hunting for them. Streaming plays
+        // anything, so show what actually came in.
+        streamingPreference.enabled.flatMapLatest { online ->
+            if (online) musicRepository.getRecentlyAddedIncludingStreamable(20)
+            else musicRepository.getRecentlyAdded(20)
+        },
     ) { playlists, recentlyAdded ->
         LibraryData(playlists = playlists, recentlyAdded = recentlyAdded)
     }

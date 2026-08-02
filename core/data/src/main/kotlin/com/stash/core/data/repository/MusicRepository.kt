@@ -51,6 +51,13 @@ interface MusicRepository {
     /** Most-recently-added tracks. */
     fun getRecentlyAdded(limit: Int = 20): Flow<List<Track>>
 
+    /**
+     * Recently added tracks regardless of download state — what a sync brought
+     * in. [getRecentlyAdded] only sees downloads, so in Online mode (where sync
+     * downloads nothing) it stays empty no matter how much new music arrives.
+     */
+    fun getRecentlyAddedIncludingStreamable(limit: Int = 20): Flow<List<Track>>
+
     /** Most-played tracks. */
     fun getMostPlayed(limit: Int = 20): Flow<List<Track>>
 
