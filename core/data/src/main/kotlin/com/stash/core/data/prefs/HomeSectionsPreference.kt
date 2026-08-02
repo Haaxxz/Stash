@@ -21,6 +21,16 @@ import javax.inject.Singleton
  * door and stays pinned on top.
  */
 enum class HomeSection(val key: String) {
+    /**
+     * Tracks a sync just brought in. Leads the default order because it answers
+     * the question a user has right after syncing — "what did I actually get?" —
+     * which previously had no answer anywhere in the app.
+     *
+     * Existing installs get it appended (see resolveHomeSectionOrder) rather than
+     * inserted, so it never silently reorders someone's tuned Home; it can be
+     * dragged up in Settings > Appearance.
+     */
+    JUST_ADDED("just_added"),
     NEW_RELEASES("new_releases"),
     QOBUZ_PLAYLISTS("qobuz_playlists"),
     TOP_ALBUMS("top_albums"),

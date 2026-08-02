@@ -684,11 +684,7 @@ private fun RecentlyDownloadedRail(
 ) {
     Column {
         Text(
-            // "ADDED", not "DOWNLOADED": Online mode now feeds this from
-            // everything a sync brought in, most of which is streamable rather
-            // than on disk. Accurate in both modes — a download was also an
-            // addition — so the label needs no mode threading.
-            text = "RECENTLY ADDED",
+            text = "RECENTLY DOWNLOADED",
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.secondary,
             modifier = Modifier.padding(start = 20.dp, top = 12.dp, bottom = 8.dp),

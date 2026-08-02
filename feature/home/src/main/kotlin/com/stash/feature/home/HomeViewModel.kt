@@ -447,6 +447,37 @@ class HomeViewModel @Inject constructor(
     }
 
     /** Play any mix playlist from the hero pager (same gate as [playHero]). */
+    /**
+     * Tracks a recent sync brought in — the "Just added" rail.
+     *
+     * Deliberately NOT downloads-gated: in Online mode a sync downloads nothing,
+     * so a downloaded-only query is empty however much new music arrived. That is
+     * why new finds were invisible and had to be hunted for inside ~200 playlists.
+     * Library stays downloads-only (it is the offline surface); this is Home's
+     * streaming counterpart.
+     *
+     * Its own StateFlow rather than a field on uiState: that combine is already
+     * at Kotlin's typed-arity limit and folds its inputs through holder objects,
+     * so threading one more source through it earns nothing but risk.
+     */
+    val justAdded: StateFlow<List<com.stash.core.model.Track>> =
+        musicRepository.getRecentlyAddedIncludingStreamable(20)
+            .stateIn(
+                scope = viewModelScope,
+                started = SharingStarted.WhileSubscribed(5_000),
+                initialValue = emptyList(),
+            )
+
+    /** Play the Just-added rail starting at [track]. */
+    fun playJustAdded(track: com.stash.core.model.Track) {
+        viewModelScope.launch {
+            val all = justAdded.value
+            val index = all.indexOfFirst { it.id == track.id }
+            if (index >= 0) playerRepository.setQueue(all, index)
+            else playerRepository.setQueue(listOf(track), 0)
+        }
+    }
+
     fun playMix(playlistId: Long) {
         viewModelScope.launch {
             val streamingOn = streamingPreference.current()

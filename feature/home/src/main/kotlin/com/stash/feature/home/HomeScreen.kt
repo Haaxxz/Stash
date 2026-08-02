@@ -165,6 +165,7 @@ fun HomeScreen(
     }
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val heroMinimized by viewModel.heroMinimized.collectAsStateWithLifecycle()
+    val justAdded by viewModel.justAdded.collectAsStateWithLifecycle()
     // Master streaming-mode flag. Both the top-bar StreamingModeChip and
     // the sheet (StreamingModeSheet) render from this single source of
     // truth; the chip itself early-returns to nothing while the build-
@@ -450,6 +451,20 @@ fun HomeScreen(
                 }
             }
             when (section) {
+                // What the last sync actually brought in. Hidden when empty so a
+                // fresh install or a no-op sync shows no dead row.
+                HomeSection.JUST_ADDED -> if (justAdded.isNotEmpty()) {
+                    item(key = "section_just_added") {
+                        CardRail(title = "Just added") {
+                            items(justAdded, key = { it.id }) { track ->
+                                JustAddedCard(
+                                    track = track,
+                                    onClick = { viewModel.playJustAdded(track) },
+                                )
+                            }
+                        }
+                    }
+                }
                 HomeSection.NEW_RELEASES -> if (uiState.newReleases.isNotEmpty()) {
                     item(key = "section_new_releases") {
                         DiscoveryAlbumRow(
