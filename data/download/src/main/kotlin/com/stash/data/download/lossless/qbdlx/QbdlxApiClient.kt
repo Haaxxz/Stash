@@ -207,6 +207,22 @@ class QbdlxApiClient @Inject constructor(
                 android.util.Log.w(TAG, "auth 401 on ${url.substringBefore('?').substringAfterLast('/')}: ${body.take(160)}")
                 throw QbdlxAuthException(401, body.take(120))
             }
+            // A banned account is a DEAD TOKEN, not a service failure.
+            //
+            // Qobuz answers a blocked account with 403 USER_BLOCKED, which used to
+            // fall through to the generic branch below: reported as a health
+            // failure, never marked dead, never rotated away from. Because the
+            // active token is sticky, one banned account in the pool meant every
+            // single resolve failed to it and dropped to lossy YouTube — with the
+            // other live tokens sitting unused. Observed on-device 2026-08-02.
+            //
+            // Matched on the error_code rather than the bare status so a 403 that
+            // genuinely means "service said no" (rate limit, geo) still counts as
+            // a transient failure and doesn't burn a good token.
+            if (resp.code == 403 && body.contains("USER_BLOCKED", ignoreCase = true)) {
+                android.util.Log.w(TAG, "token's account is blocked (403 USER_BLOCKED) — marking dead + rotating")
+                throw QbdlxAuthException(403, body.take(120))
+            }
             if (!resp.isSuccessful) {
                 android.util.Log.w(TAG, "HTTP ${resp.code} on ${url.substringBefore('?').substringAfterLast('/')}: ${body.take(160)}")
                 throw QbdlxApiException(resp.code, body.take(120))
