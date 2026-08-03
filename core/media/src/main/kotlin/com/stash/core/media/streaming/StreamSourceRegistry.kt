@@ -113,11 +113,12 @@ class StreamSourceRegistry @Inject constructor(
                 // on every queue track speculatively, not just the ones played.
                 if (allowYtDlp) add("arcod" to arcod::resolve)
                 // ...and YouTube stays available behind it. A force toggle is a
-                // TEST instrument, but the pref outlives the build that showed it:
-                // arcod is parked here, so a stale `force_arcod_only = true` used to
-                // mean every track resolved through a dead source with no fallback
-                // and no UI left to switch it off — silence, permanently. That is
-                // the amz failure below, recreated.
+                // TEST instrument, but the pref outlives the build that showed it.
+                // While arcod was parked, a stale `force_arcod_only = true` meant
+                // every track resolved through a dead source with no fallback and
+                // no UI left to switch it off — silence, permanently. arcod is
+                // live again now, but the guarantee has to survive the NEXT time a
+                // source is parked, which is the amz failure described below.
                 //
                 // Keeping the fallback costs the toggle a little of its "fails
                 // visibly" sharpness and buys back the guarantee that no
