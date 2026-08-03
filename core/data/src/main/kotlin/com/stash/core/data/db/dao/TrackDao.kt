@@ -330,34 +330,6 @@ interface TrackDao {
     @Query("SELECT * FROM tracks WHERE is_downloaded = 1 ORDER BY date_added DESC LIMIT :limit")
     fun getRecentlyAdded(limit: Int): Flow<List<TrackEntity>>
 
-    /**
-     * Recently added tracks WITHOUT the downloaded filter — what a sync actually
-     * brought in.
-     *
-     * In Online mode a sync downloads nothing (mixes never download, and
-     * streaming mode skips the enqueue entirely), so every new track it finds is
-     * invisible to [getRecentlyAdded]: hundreds of songs can arrive and no
-     * surface in the app changes. New music then exists only as rows buried in
-     * one of a couple hundred playlists, which is the whole "after syncing I have
-     * to go find it myself" problem.
-     *
-     * Blocklist-filtered like [getAllByDateAdded] — a track the user explicitly
-     * blocked must not reappear just because it is recent.
-     */
-    @Query(
-        """
-        SELECT t.* FROM tracks t
-        LEFT JOIN track_blocklist bl
-            ON bl.canonical_key = (t.canonical_artist || '|' || t.canonical_title)
-            OR (bl.spotify_uri IS NOT NULL AND bl.spotify_uri = t.spotify_uri)
-            OR (bl.youtube_id  IS NOT NULL AND bl.youtube_id  = t.youtube_id)
-        WHERE bl.canonical_key IS NULL
-        ORDER BY t.date_added DESC
-        LIMIT :limit
-        """
-    )
-    fun getRecentlyAddedIncludingStreamable(limit: Int): Flow<List<TrackEntity>>
-
     /** Most-played tracks, limited to [limit] results. */
     @Query("SELECT * FROM tracks WHERE play_count > 0 ORDER BY play_count DESC LIMIT :limit")
     fun getMostPlayed(limit: Int): Flow<List<TrackEntity>>

@@ -137,6 +137,17 @@ import com.stash.core.ui.theme.StashTheme
 import com.stash.core.common.extensions.pluralize
 
 /**
+ * How many mixes a Home rail shows before "See all".
+ *
+ * The rails were uncapped, so a synced library put ~120 cards into three
+ * horizontal lists nobody scrolls to the end of — the tail was unreachable in
+ * practice and cost layout on every recomposition. Capped here at the render
+ * site and NOT in the ViewModel on purpose: MixBrowseScreen ("See all") reads
+ * the same uiState lists, and capping upstream would truncate the full grid too.
+ */
+private const val HOME_RAIL_LIMIT = 12
+
+/**
  * Home screen composable displaying a premium dark dashboard with sync
  * status, daily mixes, recently added tracks, liked songs, and playlists.
  */
@@ -165,7 +176,6 @@ fun HomeScreen(
     }
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val heroMinimized by viewModel.heroMinimized.collectAsStateWithLifecycle()
-    val justAdded by viewModel.justAdded.collectAsStateWithLifecycle()
     // Master streaming-mode flag. Both the top-bar StreamingModeChip and
     // the sheet (StreamingModeSheet) render from this single source of
     // truth; the chip itself early-returns to nothing while the build-
@@ -451,20 +461,6 @@ fun HomeScreen(
                 }
             }
             when (section) {
-                // What the last sync actually brought in. Hidden when empty so a
-                // fresh install or a no-op sync shows no dead row.
-                HomeSection.JUST_ADDED -> if (justAdded.isNotEmpty()) {
-                    item(key = "section_just_added") {
-                        CardRail(title = "Just added") {
-                            items(justAdded, key = { it.id }) { track ->
-                                JustAddedCard(
-                                    track = track,
-                                    onClick = { viewModel.playJustAdded(track) },
-                                )
-                            }
-                        }
-                    }
-                }
                 HomeSection.NEW_RELEASES -> if (uiState.newReleases.isNotEmpty()) {
                     item(key = "section_new_releases") {
                         DiscoveryAlbumRow(
@@ -527,7 +523,7 @@ fun HomeScreen(
                             actionText = "See all",
                             onActionClick = { onSeeAllMixes(MixRail.MADE_FOR_YOU) },
                         ) {
-                            items(uiState.madeForYou, key = { it.id }) { m ->
+                            items(uiState.madeForYou.take(HOME_RAIL_LIMIT), key = { it.id }) { m ->
                                 MixRailCard(
                                     title = m.title, artUrl = m.artUrl, source = m.source,
                                     buildState = m.buildState, onClick = { openMix(m.id) },
@@ -544,7 +540,7 @@ fun HomeScreen(
                             actionText = "See all",
                             onActionClick = { onSeeAllMixes(MixRail.RADIOS) },
                         ) {
-                            items(uiState.radios, key = { it.id }) { m ->
+                            items(uiState.radios.take(HOME_RAIL_LIMIT), key = { it.id }) { m ->
                                 MixRailCard(
                                     title = m.title, artUrl = m.artUrl, source = m.source,
                                     buildState = m.buildState, onClick = { openMix(m.id) },
@@ -561,7 +557,7 @@ fun HomeScreen(
                             actionText = "See all",
                             onActionClick = { onSeeAllMixes(MixRail.MOOD_DECADES) },
                         ) {
-                            items(uiState.moodDecades, key = { it.id }) { m ->
+                            items(uiState.moodDecades.take(HOME_RAIL_LIMIT), key = { it.id }) { m ->
                                 MixRailCard(
                                     title = m.title, artUrl = m.artUrl, source = m.source,
                                     buildState = m.buildState, onClick = { openMix(m.id) },

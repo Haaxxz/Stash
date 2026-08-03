@@ -149,7 +149,6 @@ private fun com.stash.core.data.prefs.HomeSection.displayLabel(): String = when 
     com.stash.core.data.prefs.HomeSection.NEW_RELEASES -> "New Releases"
     com.stash.core.data.prefs.HomeSection.QOBUZ_PLAYLISTS -> "Qobuz Playlists"
     com.stash.core.data.prefs.HomeSection.TOP_ALBUMS -> "Top Albums"
-    com.stash.core.data.prefs.HomeSection.JUST_ADDED -> "Just added"
     com.stash.core.data.prefs.HomeSection.MADE_FOR_YOU -> "Made for you"
     com.stash.core.data.prefs.HomeSection.RADIOS -> "Radios"
     com.stash.core.data.prefs.HomeSection.MOOD_DECADES -> "Mood & decades"
