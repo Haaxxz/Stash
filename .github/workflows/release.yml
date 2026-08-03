@@ -219,6 +219,7 @@ jobs:
       - name: Verify bundled credentials embedded in APK
         env:
           QBDLX_APP_ID: ${{ secrets.QBDLX_APP_ID }}
+          ARCOD_STASH_KEY: ${{ secrets.ARCOD_STASH_KEY }}
           # QBDLX_TOKEN_POOL comes from $GITHUB_ENV (the fetch step) — do NOT
           # redeclare it as the secret here, or the fingerprint would be computed
           # over the secret while the dex carries the fetched pool → false-fail.
@@ -249,6 +250,20 @@ jobs:
             exit 1
           fi
           echo "qbdlx pool verified: app_id present, token encrypted, fp $FP embedded"
+
+          # 4. ARCOD: same class of bug as the blank qbdlx creds above — an unset
+          # secret yields a blank BuildConfig, ARCOD_CONFIGURED goes false and both
+          # registries silently skip arcod, so the APK quietly loses a lossless
+          # source instead of failing the build.
+          if [ -z "$ARCOD_STASH_KEY" ]; then
+            echo "::error::ARCOD_STASH_KEY not available — arcod would ship disabled"
+            exit 1
+          fi
+          if ! grep -a -q -F -- "$ARCOD_STASH_KEY" "$DEX_DIR"/classes*.dex; then
+            echo "::error::arcod stash key missing from APK dex — blank BuildConfig?"
+            exit 1
+          fi
+          echo "arcod verified: stash key embedded"
 
       - name: Rename APK for release
         id: rename_apk
