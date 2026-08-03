@@ -21,6 +21,9 @@ class HomeSectionOrderTest {
             listOf(
                 HomeSection.MADE_FOR_YOU, HomeSection.RADIOS, HomeSection.MOOD_DECADES,
                 HomeSection.NEW_RELEASES, HomeSection.QOBUZ_PLAYLISTS, HomeSection.TOP_ALBUMS,
+                // JUST_ADDED post-dates this saved order, so it appends rather than
+                // displacing the user's arrangement — the point of the merge rule.
+                HomeSection.JUST_ADDED,
             ),
             resolveHomeSectionOrder(saved),
         )
@@ -33,7 +36,7 @@ class HomeSectionOrderTest {
             listOf(
                 HomeSection.RADIOS, HomeSection.TOP_ALBUMS,
                 // appended in default order:
-                HomeSection.NEW_RELEASES, HomeSection.QOBUZ_PLAYLISTS,
+                HomeSection.JUST_ADDED, HomeSection.NEW_RELEASES, HomeSection.QOBUZ_PLAYLISTS,
                 HomeSection.MADE_FOR_YOU, HomeSection.MOOD_DECADES,
             ),
             resolveHomeSectionOrder(saved),
