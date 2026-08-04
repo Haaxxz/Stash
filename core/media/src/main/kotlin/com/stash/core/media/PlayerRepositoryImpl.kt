@@ -61,6 +61,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flow
@@ -167,6 +168,20 @@ class PlayerRepositoryImpl @Inject constructor(
         // music was already playing (e.g. via Android Auto).
         scope.launch {
             ensureController()
+        }
+
+        // ...and let go of it again once playback has been idle for a while.
+        // Holding a MediaController BINDS StashPlaybackService, and a process
+        // hosting a live service is never cached, so the freezer can never
+        // freeze it: every timer in the app keeps running for as long as the
+        // process lives. Nothing released the controller before this, which
+        // is why a device showed the service alive 1h15m after the last track
+        // and 56 mAh burned across 5h49m of "cached" time. Note this fires
+        // even if nothing ever played — the init above binds on cold start.
+        scope.launch {
+            idleReleaseTrigger(_playerState, IDLE_CONTROLLER_RELEASE_MS).collect {
+                releaseIdleController()
+            }
         }
 
         // Evict deleted tracks from the live queue. Without this, ExoPlayer's
@@ -388,7 +403,18 @@ class PlayerRepositoryImpl @Inject constructor(
 
     override suspend fun play() {
         cascadeGuard.onUserTransport()
-        ensureController()?.play()
+        val controller = ensureController() ?: return
+        // An empty timeline means the service died and took ExoPlayer's queue
+        // with it — either because an idle player released the controller
+        // (see [idleReleaseTrigger]) or because the OS reclaimed the service.
+        // play() on an empty player is a silent no-op, i.e. a dead play
+        // button; rebuild from the persisted queue instead. resumeLastQueue
+        // ends in prepare() + play(), so playback still starts.
+        if (controller.mediaItemCount == 0) {
+            resumeLastQueue()
+            return
+        }
+        controller.play()
     }
 
     override suspend fun pause() {
@@ -1531,6 +1557,26 @@ class PlayerRepositoryImpl @Inject constructor(
     // ---- Internals ----
 
     /**
+     * Drops the controller (and with it the service binding) after an idle
+     * spell. Everything routes through [ensureController], which rebuilds on
+     * demand, and [play] restores the queue the dying service takes with it.
+     *
+     * Clears the field BEFORE releasing so nothing can reach a released
+     * controller. Bails if playback restarted in the meantime — the trigger
+     * and the resume can race on the main thread.
+     */
+    private fun releaseIdleController() {
+        val controller = controllerDeferred ?: return
+        if (controller.isPlaying || controller.playWhenReady) return
+        controllerDeferred = null
+        runCatching {
+            controller.removeListener(playerListener)
+            controller.release()
+        }.onFailure { Log.w(TAG, "idle controller release failed", it) }
+        Log.i(TAG, "released idle MediaController; service is free to stop")
+    }
+
+    /**
      * Lazily builds and connects a [MediaController] to [StashPlaybackService].
      * Returns the connected controller or null on failure.
      */
@@ -2084,6 +2130,15 @@ class PlayerRepositoryImpl @Inject constructor(
         private const val TAG = "StashPlayer"
         private const val POSITION_UPDATE_INTERVAL_MS = 250L
 
+        /**
+         * How long playback stays stopped before the controller — and so the
+         * service binding keeping the process unfreezable — is let go. Long
+         * enough that a pause to take a phone call costs nothing on resume,
+         * short enough that a phone in a pocket stops paying for a player
+         * nobody is listening to.
+         */
+        private const val IDLE_CONTROLLER_RELEASE_MS = 5 * 60_000L
+
         /** Auto-grow fires once the remaining queue tail drops below this many tracks. */
         private const val RADIO_GROW_THRESHOLD = 5
         private const val LIBRARY_SHUFFLE_GROW_THRESHOLD = 5
@@ -2270,6 +2325,39 @@ internal const val POSITION_PERSIST_MIN_DELTA_MS = 5_000L
  * Top-level + `internal` so the test can exercise it on virtual time
  * without booting the repository (same idea as [shouldPersistPosition]).
  */
+/**
+ * Fires once playback has been stopped continuously for [timeoutMs], so an
+ * idle player can let go of its [MediaController].
+ *
+ * Holding that controller binds [StashPlaybackService], and a process that
+ * hosts a live service is never cached — so Android's freezer can never
+ * freeze it, and every timer left in the app keeps running for as long as
+ * the process survives. Nothing in the app released the controller, which
+ * is why a Pixel showed the service record alive 1h15m after the last track
+ * and 56 mAh burned over 5h49m of nominally "cached" time.
+ *
+ * Resuming takes the release back off the table, and each new pause starts
+ * a fresh countdown — releasing the controller out from under an active
+ * listener would drop playback.
+ */
+@OptIn(ExperimentalCoroutinesApi::class)
+internal fun idleReleaseTrigger(
+    playerState: Flow<PlayerState>,
+    timeoutMs: Long,
+): Flow<Unit> = playerState
+    .map { it.isPlaying }
+    .distinctUntilChanged()
+    .flatMapLatest { isPlaying ->
+        if (isPlaying) {
+            emptyFlow()
+        } else {
+            flow {
+                delay(timeoutMs)
+                emit(Unit)
+            }
+        }
+    }
+
 @OptIn(ExperimentalCoroutinesApi::class)
 internal fun positionTicker(
     playerState: Flow<PlayerState>,

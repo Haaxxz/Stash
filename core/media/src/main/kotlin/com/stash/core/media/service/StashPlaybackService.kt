@@ -418,7 +418,7 @@ class StashPlaybackService : MediaLibraryService() {
         listenedPlayer = player
 
         // Cache crossfade prefs for the poll's prepare/fire decisions.
-        serviceScope.launch { crossfadePreference.enabled.collect { crossfadeEnabled = it } }
+        serviceScope.launch { crossfadePreference.enabled.collect { onCrossfadeEnabledChanged(it) } }
         serviceScope.launch { crossfadePreference.durationMs.collect { crossfadeDurationMs = it } }
 
         // Sleep-timer status notification — separate from the media notification
@@ -533,13 +533,46 @@ class StashPlaybackService : MediaLibraryService() {
      * is playing; the swap callback restarts it against the new master.
      */
     @OptIn(UnstableApi::class)
+    /**
+     * Starts the arm-poll — but only when crossfade is actually on.
+     *
+     * Every tick of this loop calls [evaluateCrossfade], whose first act is
+     * to return when `!crossfadeEnabled`. That check used to live INSIDE the
+     * tick, so a feature that is off by default still woke the service four
+     * times a second for the whole of every track, forever, to decide it had
+     * nothing to do. The gate belongs around the loop, and this is the one
+     * choke point all three call sites (transition, isPlaying, post-swap)
+     * route through. Flipping the pref on mid-playback is handled by
+     * [onCrossfadeEnabledChanged].
+     */
     private fun startCrossfadePoll(player: Player) {
         crossfadePollJob?.cancel()
+        crossfadePollJob = null
+        if (!crossfadeEnabled) return
         crossfadePollJob = serviceScope.launch {
             while (isActive && player.isPlaying) {
                 evaluateCrossfade(player)
                 delay(CROSSFADE_POLL_INTERVAL_MS)
             }
+        }
+    }
+
+    /**
+     * Keeps the poll in step with the preference. Turning crossfade on
+     * mid-track has to start a poll that [startCrossfadePoll] would have
+     * refused to start while it was off; turning it off has to stop the one
+     * that is running rather than leaving it spinning until the track ends.
+     */
+    internal fun onCrossfadeEnabledChanged(enabled: Boolean) {
+        val wasEnabled = crossfadeEnabled
+        crossfadeEnabled = enabled
+        if (enabled == wasEnabled) return
+        val master = crossfadeEngine?.masterPlayer
+        if (enabled) {
+            if (master?.isPlaying == true) startCrossfadePoll(master)
+        } else {
+            crossfadePollJob?.cancel()
+            crossfadePollJob = null
         }
     }
 
