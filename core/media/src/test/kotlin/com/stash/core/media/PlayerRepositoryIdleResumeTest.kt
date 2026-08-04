@@ -24,15 +24,15 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
 
 /**
- * An idle player releases its MediaController so the playback service can
- * die and the process can finally be frozen (see [idleReleaseTrigger]).
- * Once the service is gone, ExoPlayer's timeline goes with it — so the very
- * next `play()` reconnects to a controller holding an EMPTY queue.
+ * When the playback service dies, ExoPlayer's timeline goes with it — so the
+ * next `play()` reconnects to a controller holding an EMPTY queue, and
+ * `ensureController()?.play()` on an empty player is a silent no-op. A dead
+ * play button.
  *
- * Without a guard that is a dead play button: `ensureController()?.play()`
- * on an empty timeline is a silent no-op. These tests pin the fallback, and
- * it is worth having on its own merits — the OS can reclaim the service at
- * any time, which is the same "hit play, nothing happens" symptom.
+ * The OS reclaims background services routinely, so this is reachable
+ * without anything exotic: pause, leave the app long enough for the service
+ * to be killed, come back, press play, nothing happens. These tests pin the
+ * fallback that rebuilds the queue from persisted state instead.
  */
 @RunWith(RobolectricTestRunner::class)
 class PlayerRepositoryIdleResumeTest {
