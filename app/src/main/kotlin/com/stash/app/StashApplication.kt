@@ -133,6 +133,9 @@ class StashApplication : Application(), Configuration.Provider {
     @Inject
     lateinit var streamingQualityPreferences: com.stash.data.download.prefs.StreamingQualityPreferences
 
+    @Inject
+    lateinit var connectivityMonitor: com.stash.core.media.streaming.ConnectivityMonitor
+
     /**
      * v0.9.17: eager-bound observer that enqueues [LosslessRetryWorker]
      * on cookie change / lastKnownBadCookie clear / circuit-breaker
@@ -302,11 +305,28 @@ class StashApplication : Application(), Configuration.Provider {
             // once-per-session gate with the download path (DownloadExecutor),
             // so whichever runs first does the work and the other returns
             // immediately — downloads are still hard-gated on a fresh binary.
-            ytDlpManager.ensureFreshened()
+            //
+            // Gated, because this is speculative work with a real price: a
+            // nightly binary download plus a throwaway YouTube extraction
+            // through QuickJS, on EVERY cold start, for a user who may never
+            // preview or stream anything. Offline it cannot even succeed.
+            //
+            // Skipping it in offline mode does not slow downloads down where
+            // anyone can feel it: the download path calls ensureFreshened()
+            // itself, inside a worker, where the one-off cost is invisible.
+            // The latency this prewarm exists to hide is the first PREVIEW,
+            // and previews only happen with streaming on.
+            if (connectivityMonitor.isConnected() && streamingPreference.current()) {
+                ytDlpManager.ensureFreshened()
+            }
         }
         // Warm up music.youtube.com TLS + DNS in the first 2s of launch so
         // the first search request doesn't pay the full handshake cost.
+        // Search still works in offline mode, so this is gated on having a
+        // network at all rather than on the streaming preference — offline
+        // it is a guaranteed-to-fail request that wakes the radio.
         applicationScope.launch {
+            if (!connectivityMonitor.isConnected()) return@launch
             runCatching {
                 okHttpClient.newCall(
                     Request.Builder().url("https://music.youtube.com/").head().build(),
