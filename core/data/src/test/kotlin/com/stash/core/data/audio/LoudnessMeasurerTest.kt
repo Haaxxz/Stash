@@ -26,7 +26,14 @@ class LoudnessMeasurerTest {
 
     private val fakeBridge = FakeFFmpegBridge()
     private val fakeTrackDao = io.mockk.mockk<com.stash.core.data.db.dao.TrackDao>(relaxed = true)
-    private val measurer = LoudnessMeasurer(fakeBridge, fakeTrackDao)
+    // These tests exercise measure() directly, which is charging-agnostic —
+    // only the download-time measureAndPersistInBackground defers off power
+    // (see LoudnessMeasurerDeferralTest). Charging = true keeps them honest
+    // either way.
+    private val alwaysCharging = io.mockk.mockk<ChargingMonitor> {
+        io.mockk.every { isCharging() } returns true
+    }
+    private val measurer = LoudnessMeasurer(fakeBridge, fakeTrackDao, alwaysCharging)
 
     private val createdTempFiles = mutableListOf<File>()
 
@@ -83,7 +90,7 @@ class LoudnessMeasurerTest {
         val pausingBridge = PausingFakeFFmpegBridge(
             output = resource("ffmpeg_output/normal.txt"),
         )
-        val serialMeasurer = LoudnessMeasurer(pausingBridge, fakeTrackDao)
+        val serialMeasurer = LoudnessMeasurer(pausingBridge, fakeTrackDao, alwaysCharging)
         val file = tempFile("dummy.mp3")
 
         val first = async { serialMeasurer.measure(file) }

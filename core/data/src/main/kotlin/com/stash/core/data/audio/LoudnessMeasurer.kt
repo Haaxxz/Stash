@@ -61,6 +61,7 @@ import javax.inject.Singleton
 class LoudnessMeasurer @Inject constructor(
     private val bridge: FFmpegBridge,
     private val trackDao: TrackDao,
+    private val chargingMonitor: ChargingMonitor,
 ) {
     // NOT a constructor parameter — Hilt doesn't honour Kotlin default values,
     // so injecting CoroutineDispatcher would require a project-wide @Qualifier
@@ -160,6 +161,23 @@ class LoudnessMeasurer @Inject constructor(
      * so the daily backfill worker won't pick it up again immediately.
      */
     fun measureAndPersistInBackground(trackId: Long, file: File) {
+        // Off power, hand this to LoudnessBackfillWorker instead of doing it
+        // now. A full ffmpeg decode per downloaded track is the single most
+        // expensive thing the download pipeline does, and downloads run in
+        // OFFLINE mode — so the users who picked offline listening are
+        // exactly the ones paying for it, on battery, hundreds of tracks at
+        // a time during a sync.
+        //
+        // The worker already measures precisely these rows (its query is
+        // `loudness_measured_at IS NULL`) and already waits for
+        // charging + device-idle + battery-not-low, so deferring costs no
+        // measurement — it just moves the CPU to where it is free. Leave the
+        // row untouched: stamping it (even as failed) would drop it out of
+        // that query and it would never be level-matched at all.
+        if (!chargingMonitor.isCharging()) {
+            Log.i(TAG, "not charging — deferring loudness for track $trackId to the backfill worker")
+            return
+        }
         backgroundScope.launch {
             when (val r = measure(file)) {
                 is Result.Success -> runCatching {
