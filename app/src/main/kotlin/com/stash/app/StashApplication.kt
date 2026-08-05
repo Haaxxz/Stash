@@ -38,7 +38,6 @@ import com.stash.core.data.sync.workers.TagEnrichmentWorker
 import com.stash.core.data.sync.workers.TrackInfoEnrichmentWorker
 import com.stash.core.data.sync.workers.UpdateCheckWorker
 import com.stash.core.data.sync.workers.constraintsForManualTrigger
-import com.stash.core.media.preview.LosslessUrlPrefetcher
 import com.stash.core.media.streaming.KennyyHealthProbe
 import com.stash.core.media.streaming.SquidCookieAutoRefresher
 import com.stash.data.download.lossless.LosslessRetryScheduler
@@ -120,9 +119,6 @@ class StashApplication : Application(), Configuration.Provider {
 
     @Inject
     lateinit var downloadNetworkPreference: DownloadNetworkPreference
-
-    @Inject
-    lateinit var losslessPrefetcher: LosslessUrlPrefetcher
 
     @Inject
     lateinit var losslessSourcePreferences: com.stash.data.download.lossless.LosslessSourcePreferences
@@ -286,17 +282,10 @@ class StashApplication : Application(), Configuration.Provider {
                 }
             }.onFailure { Log.w("StashStartup", "lyrics miss-stamp reset failed", it) }
         }
-        // Prune stale lossless prefetch entries every 60s. Bounded
-        // memory growth across long browse sessions.
-        applicationScope.launch {
-            while (true) {
-                kotlinx.coroutines.delay(60_000)
-                // One bad prune tick must not silently end pruning for the
-                // whole session (unbounded memory growth thereafter).
-                runCatching { losslessPrefetcher.cancelStale() }
-                    .onFailure { Log.w("StashStartup", "prefetch prune tick failed", it) }
-            }
-        }
+        // (The lossless prefetch cache now prunes itself on insert — see
+        // LosslessUrlPrefetcher.warmUp. It used to be swept by a 60s loop
+        // launched here, which woke for the entire life of the process to
+        // sweep a map that is empty unless the user is browsing.)
         applicationScope.launch {
             // Best-effort prewarm: initialize, freshen yt-dlp to the latest
             // nightly, and warm the player-JS + QuickJS + EJS caches so the
