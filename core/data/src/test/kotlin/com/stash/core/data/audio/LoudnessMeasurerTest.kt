@@ -59,6 +59,26 @@ class LoudnessMeasurerTest {
     }
 
     @Test
+    fun parsesTheSummaryNotTheFirstProgressLine() {
+        // Production stderr contains a per-frame progress line for every 100ms
+        // of audio BEFORE the Summary block, and the first frames always read
+        // `I: -70.0 LUFS` (the gating floor — nothing integrated yet). The
+        // parser must anchor to the Summary. This is not hypothetical: every
+        // one of the 857 measured tracks on the reference device had stored
+        // exactly -70.0, because the old first-match parse always won on
+        // frame line one. The Summary-only `normal.txt` fixture could never
+        // catch it.
+        fakeBridge.nextOutput = resource("ffmpeg_output/full_run_with_frame_lines.txt")
+
+        val r = runBlocking { measurer.measure(tempFile("dummy.flac")) }
+
+        assertTrue("expected Success, got $r", r is LoudnessMeasurer.Result.Success)
+        r as LoudnessMeasurer.Result.Success
+        assertEquals(-9.8f, r.lufs, 0.01f)
+        assertEquals(0.3f, r.truePeakDbfs, 0.01f)
+    }
+
+    @Test
     fun shortClip_returnsFailed() {
         fakeBridge.nextOutput = resource("ffmpeg_output/short_clip.txt")
 
