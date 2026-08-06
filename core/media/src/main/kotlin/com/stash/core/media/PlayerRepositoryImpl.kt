@@ -99,6 +99,7 @@ class PlayerRepositoryImpl @Inject constructor(
     private val playbackResumer: PlaybackResumer,
     private val radioGenerator: com.stash.core.data.radio.RadioStationGenerator,
     private val trackIdentityEvents: com.stash.core.data.sync.TrackIdentityEvents,
+    private val playbackSessionBus: PlaybackSessionBus,
 ) : PlayerRepository {
 
     /**
@@ -167,6 +168,20 @@ class PlayerRepositoryImpl @Inject constructor(
         // music was already playing (e.g. via Android Auto).
         scope.launch {
             ensureController()
+        }
+
+        // Idle-stop handshake. The service flips this false just before it
+        // stops itself: release the controller so OUR binding doesn't keep
+        // the stopped service (and the whole process) alive. It flips true
+        // in the service's onCreate: reconnect so state observation works
+        // for playback the app didn't start (media button / Bluetooth) —
+        // the deafness that killed the previous repo-side idle design.
+        // The last _playerState snapshot is deliberately kept on release so
+        // the mini player still shows the paused track; play() already
+        // rebuilds from the persisted queue when the timeline comes back
+        // empty.
+        scope.launch {
+            playbackSessionBus.sessionAlive.collect { alive -> onSessionAliveChanged(alive) }
         }
 
         // Evict deleted tracks from the live queue. Without this, ExoPlayer's
@@ -273,6 +288,9 @@ class PlayerRepositoryImpl @Inject constructor(
      * Internal as a test seam: gate/queue tests inject a mock controller here. */
     @Volatile
     internal var controllerDeferred: MediaController? = null
+
+    /** Serialises controller construction — see [ensureController]. */
+    private val controllerBuildMutex = Mutex()
 
     /**
      * v0.9.14: True while a "Shuffle Library" queue is active. Set by
@@ -1543,26 +1561,57 @@ class PlayerRepositoryImpl @Inject constructor(
     /**
      * Lazily builds and connects a [MediaController] to [StashPlaybackService].
      * Returns the connected controller or null on failure.
+     *
+     * Single-flight behind [controllerBuildMutex]: the init-time connect, the
+     * session-alive handshake and any early command can all race here, and
+     * two winners would mean two live controllers — the loser's binding is
+     * never released, which would pin an idle-stopped service (and the whole
+     * process) alive forever. A cached-but-disconnected controller (service
+     * stopped between builds) is released and rebuilt rather than returned.
      */
     private suspend fun ensureController(): MediaController? {
-        controllerDeferred?.let { return it }
+        controllerDeferred?.let { if (it.isConnected) return it }
 
-        return try {
-            val sessionToken = SessionToken(
-                context,
-                ComponentName(context, StashPlaybackService::class.java),
-            )
-            val controller = MediaController.Builder(context, sessionToken)
-                .buildAsync()
-                .await()
+        return controllerBuildMutex.withLock {
+            controllerDeferred?.let {
+                if (it.isConnected) return it
+                it.release()
+                controllerDeferred = null
+            }
+            try {
+                val sessionToken = SessionToken(
+                    context,
+                    ComponentName(context, StashPlaybackService::class.java),
+                )
+                val controller = MediaController.Builder(context, sessionToken)
+                    .buildAsync()
+                    .await()
 
-            controller.addListener(playerListener)
-            controllerDeferred = controller
-            // Sync initial state
-            updateState(controller)
-            controller
-        } catch (e: Exception) {
-            null
+                controller.addListener(playerListener)
+                controllerDeferred = controller
+                // Sync initial state
+                updateState(controller)
+                controller
+            } catch (e: Exception) {
+                null
+            }
+        }
+    }
+
+    /**
+     * Idle-stop handshake (see [PlaybackSessionBus]). `false` → the service
+     * is about to stop itself: release our controller so the binding doesn't
+     * keep it alive, but KEEP the last [_playerState] snapshot so the UI
+     * still shows the paused track. `true` → the service is up (possibly
+     * started by a media button while we held no controller): reconnect so
+     * state observation and listen-recording resume.
+     */
+    internal suspend fun onSessionAliveChanged(alive: Boolean) {
+        if (alive) {
+            ensureController()
+        } else {
+            controllerDeferred?.release()
+            controllerDeferred = null
         }
     }
 

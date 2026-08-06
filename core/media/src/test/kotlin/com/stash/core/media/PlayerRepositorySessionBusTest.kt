@@ -3,6 +3,7 @@ package com.stash.core.media
 import android.os.Looper
 import androidx.media3.session.MediaController
 import androidx.test.core.app.ApplicationProvider
+import com.google.common.truth.Truth.assertThat
 import com.stash.core.data.db.dao.TrackDao
 import com.stash.core.data.prefs.StreamingPreference
 import com.stash.core.data.repository.MusicRepository
@@ -10,8 +11,6 @@ import com.stash.core.data.sync.TrackIdentityEvents
 import com.stash.core.media.streaming.ConnectivityMonitor
 import com.stash.core.media.streaming.StreamSourceRegistry
 import com.stash.core.media.streaming.StreamUrlCache
-import io.mockk.coEvery
-import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
@@ -24,18 +23,16 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
 
 /**
- * When the playback service dies, ExoPlayer's timeline goes with it — so the
- * next `play()` reconnects to a controller holding an EMPTY queue, and
- * `ensureController()?.play()` on an empty player is a silent no-op. A dead
- * play button.
+ * Pins the repository half of the idle-stop handshake ([PlaybackSessionBus]).
  *
- * The OS reclaims background services routinely, so this is reachable
- * without anything exotic: pause, leave the app long enough for the service
- * to be killed, come back, press play, nothing happens. These tests pin the
- * fallback that rebuilds the queue from persisted state instead.
+ * When the service announces it is stopping, the repository must release its
+ * MediaController — that binding is what kept a stopped service (and the
+ * process, and two ExoPlayers) alive around the clock. But releasing must
+ * NOT wipe the last published player state: the mini player keeps showing
+ * the paused track, and play() rebuilds from the persisted queue.
  */
 @RunWith(RobolectricTestRunner::class)
-class PlayerRepositoryIdleResumeTest {
+class PlayerRepositorySessionBusTest {
 
     private val playbackStateStore: PlaybackStateStore = mockk(relaxed = true)
     private val musicRepository: MusicRepository = mockk {
@@ -47,10 +44,10 @@ class PlayerRepositoryIdleResumeTest {
     private val connectivity: ConnectivityMonitor = mockk(relaxed = true)
     private val trackDao: TrackDao = mockk(relaxed = true)
     private val controller: MediaController = mockk(relaxed = true)
-    private val playbackResumer: PlaybackResumer = mockk(relaxed = true)
     private val trackIdentityEvents: TrackIdentityEvents = mockk {
         every { changes } returns MutableSharedFlow()
     }
+    private val bus = PlaybackSessionBus()
 
     private lateinit var repo: PlayerRepositoryImpl
 
@@ -65,41 +62,52 @@ class PlayerRepositoryIdleResumeTest {
             streamUrlCache = streamUrlCache,
             connectivity = connectivity,
             trackDao = trackDao,
-            playbackResumer = playbackResumer,
+            playbackResumer = mockk(relaxed = true),
             radioGenerator = mockk(relaxed = true),
             trackIdentityEvents = trackIdentityEvents,
-            playbackSessionBus = PlaybackSessionBus(),
+            playbackSessionBus = bus,
         )
-        // The seam mock must read as CONNECTED or ensureController treats it
-        // as a zombie from a stopped service and rebuilds a real one.
         every { controller.isConnected } returns true
         repo.controllerDeferred = controller
     }
 
     @Test
-    fun `play on an empty timeline restores the persisted queue instead of no-oping`() = runTest {
-        every { controller.mediaItemCount } returns 0
-        coEvery { playbackResumer.buildResumePlan() } returns null
-        coEvery { trackDao.getLastPlayedTrack() } returns null
-        every { trackDao.getRecentlyAdded(any()) } returns kotlinx.coroutines.flow.flowOf(emptyList())
+    fun `service stopping releases the controller so the binding cannot pin the service`() = runTest {
+        repo.onSessionAliveChanged(false)
 
-        repo.play()
-        // resumeLastQueue is deliberately fire-and-forget on the repository's
-        // main-dispatcher scope, so drain the looper before asserting.
-        shadowOf(Looper.getMainLooper()).idle()
-
-        // The resume path is what rebuilds a timeline the dead service took
-        // with it; calling play() straight through would do nothing at all.
-        coVerify(exactly = 1) { playbackResumer.buildResumePlan() }
+        verify(exactly = 1) { controller.release() }
+        assertThat(repo.controllerDeferred).isNull()
     }
 
     @Test
-    fun `play with a loaded timeline plays without touching the resume path`() = runTest {
-        every { controller.mediaItemCount } returns 12
+    fun `service stopping keeps the last player state for the UI`() = runTest {
+        // Flush the init-time work while the seam mock is still installed —
+        // draining AFTER the release would let the queued eager connect
+        // build a real controller against Robolectric's fake binder.
+        shadowOf(Looper.getMainLooper()).idle()
+        val before = repo.playerState.value
 
-        repo.play()
+        repo.onSessionAliveChanged(false)
 
-        verify(exactly = 1) { controller.play() }
-        coVerify(exactly = 0) { playbackResumer.buildResumePlan() }
+        assertThat(repo.playerState.value).isEqualTo(before)
+    }
+
+    @Test
+    fun `session alive with a live controller is a no-op`() = runTest {
+        repo.onSessionAliveChanged(true)
+
+        verify(exactly = 0) { controller.release() }
+        assertThat(repo.controllerDeferred).isSameInstanceAs(controller)
+    }
+
+    @Test
+    fun `the bus signal itself drives the release`() = runTest {
+        // End-to-end through the init collector, not just the handler:
+        // this is the wiring a green unit test failed to prove last time.
+        bus.onServiceStopping()
+        shadowOf(Looper.getMainLooper()).idle()
+
+        verify(exactly = 1) { controller.release() }
+        assertThat(repo.controllerDeferred).isNull()
     }
 }
