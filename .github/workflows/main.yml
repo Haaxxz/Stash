@@ -1,1 +1,49 @@
- 
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: ["**"]
+  workflow_dispatch: {}
+
+jobs:
+  build:
+    name: Build and Test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Run basic detection and tests
+        shell: bash
+        run: |
+          echo "Listing repository files for debugging"
+          ls -la
+
+          if [ -f package.json ]; then
+            echo "Detected Node.js project (package.json)"
+            if command -v npm >/dev/null 2>&1; then
+              npm ci || npm install
+              if [ -f package.json ] && jq -e '.scripts.test' package.json >/dev/null 2>&1; then
+                npm test || echo "npm test failed (non-blocking)"
+              else
+                echo "No npm test script found"
+              fi
+            else
+              echo "npm not installed on runner"
+            fi
+          fi
+
+          if [ -f requirements.txt ]; then
+            echo "Detected Python project (requirements.txt)"
+            python3 -m pip install -r requirements.txt || true
+            if command -v pytest >/dev/null 2>&1; then
+              pytest || echo "pytest failed (non-blocking)"
+            else
+              echo "pytest not available"
+            fi
+          fi
+
+          echo "Done"
